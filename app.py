@@ -30,9 +30,30 @@ SCENARIO_MAP = {
 }
 
 
+# Keyword routing — maps free-text crisis descriptions to a scenario class.
+# First match wins; falls back to FundingCutScenario.
+SCENARIO_KEYWORDS = [
+    (("fund", "budget", "money", "cut", "financ"), FundingCutScenario, "funding_crisis"),
+    (("teacher", "staff", "shortage", "exodus", "burnout"), TeacherShortageScenario, "teacher_shortage"),
+    (("pandemic", "covid", "lockdown", "learning loss", "remote"), PandemicRecoveryScenario, "pandemic_recovery"),
+    (("conflict", "war", "displacement", "refugee", "violence"), ConflictZoneScenario, "conflict_zone"),
+]
+
+
+def _resolve_scenario(text: str) -> tuple:
+    """Map a free-text crisis description to (ScenarioClass, label)."""
+    if not text:
+        return FundingCutScenario, "funding_crisis"
+    t = text.lower()
+    for keywords, cls, label in SCENARIO_KEYWORDS:
+        if any(kw in t for kw in keywords):
+            return cls, label
+    return FundingCutScenario, "funding_crisis"
+
+
 def _build_env(scenario_cfg: dict, n_steps: int) -> DropoutCommonsEnv:
     """Construct DropoutCommonsEnv from a UI scenario config."""
-    scenario_cls = SCENARIO_MAP.get(scenario_cfg["type"], FundingCutScenario)
+    scenario_cls = scenario_cfg.get("class", FundingCutScenario)
     return DropoutCommonsEnv(scenario=scenario_cls(), episode_length=n_steps)
 
 
@@ -73,38 +94,32 @@ class VIDYADemo:
     
     def create_scenario(
         self,
-        scenario_type: str,
+        crisis_text: str,
         difficulty: str,
         initial_budget: float,
         teacher_retention: float,
-        enrollment_rate: float
+        enrollment_rate: float,
     ) -> str:
-        """Create a crisis scenario."""
+        """Create a crisis scenario from a free-text description."""
         try:
-            if scenario_type == "funding_crisis":
-                self.current_scenario = {
-                    'type': 'funding_crisis',
-                    'params': {
-                        'initial_budget': initial_budget / 100,
-                        'teacher_retention': teacher_retention / 100,
-                        'enrollment_rate': enrollment_rate / 100,
-                        'difficulty': difficulty
-                    }
-                }
-                
-            elif scenario_type == "teacher_shortage":
-                self.current_scenario = {
-                    'type': 'teacher_shortage',
-                    'params': {
-                        'initial_budget': initial_budget / 100,
-                        'teacher_retention': teacher_retention / 100,
-                        'enrollment_rate': enrollment_rate / 100,
-                        'difficulty': difficulty
-                    }
-                }
-            
-            return f"✅ Created {scenario_type.replace('_', ' ').title()} scenario (Difficulty: {difficulty})"
-            
+            scenario_cls, label = _resolve_scenario(crisis_text)
+            self.current_scenario = {
+                "type": label,
+                "class": scenario_cls,
+                "label": (crisis_text or label).strip(),
+                "params": {
+                    "initial_budget": initial_budget / 100,
+                    "teacher_retention": teacher_retention / 100,
+                    "enrollment_rate": enrollment_rate / 100,
+                    "difficulty": difficulty,
+                },
+            }
+            display = (crisis_text or label).strip()
+            return (
+                f"✅ Crisis registered: \"{display}\"\n"
+                f"   Routed to archetype: {label.replace('_', ' ').title()}\n"
+                f"   Difficulty: {difficulty}"
+            )
         except Exception as e:
             return f"❌ Error creating scenario: {str(e)}"
     
@@ -646,10 +661,11 @@ def create_spaces_demo() -> gr.Blocks:
                     load_status = gr.Textbox(label="Status", interactive=False)
 
                     gr.HTML('<div class="vm-section-h">02 · Configure Scenario</div>')
-                    scenario_type = gr.Dropdown(
-                        choices=["funding_crisis", "teacher_shortage", "pandemic_recovery", "conflict_zone"],
-                        value="funding_crisis",
+                    scenario_type = gr.Textbox(
+                        value="",
                         label="Crisis Archetype",
+                        placeholder="Describe the crisis in your own words — e.g. \"sudden 40% budget cut after audit\" or \"mass teacher exodus to private schools\"",
+                        lines=2,
                     )
                     difficulty = gr.Dropdown(
                         choices=["easy", "medium", "hard"],
