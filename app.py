@@ -591,41 +591,50 @@ class VIDYADemo:
             horizontal_spacing=0.12,
         )
         colors = [
-            ('#6ea8ff', 'rgba(110,168,255,0.18)'),
-            ('#f87171', 'rgba(248,113,113,0.18)'),
-            ('#4ade80', 'rgba(74,222,128,0.18)'),
-            ('#f5b942', 'rgba(245,185,66,0.18)'),
+            ('#6ea8ff', 'rgba(110,168,255,0.25)'),
+            ('#f87171', 'rgba(248,113,113,0.25)'),
+            ('#4ade80', 'rgba(74,222,128,0.25)'),
+            ('#f5b942', 'rgba(245,185,66,0.25)'),
         ]
         positions = [(1, 1), (1, 2), (2, 1), (2, 2)]
-        steps = np.arange(obs_arr.shape[0])
+        n = int(obs_arr.shape[0]) if obs_arr.size else 1
+        steps = list(range(n))
         for (idx, _title), (line_c, fill_c), (row, col) in zip(plot_config, colors, positions):
             # Skip the 'step' index (12) — not a meaningful metric to chart.
             safe_idx = idx if 0 <= idx < 12 else 0
-            raw = obs_arr[:, safe_idx] if safe_idx < obs_arr.shape[1] else np.zeros_like(steps, dtype=float)
-            # Most obs are normalized to [0,1]; show as percent for readability.
-            series = np.asarray(raw, dtype=float) * 100.0
+            if obs_arr.size and safe_idx < obs_arr.shape[1]:
+                series = [float(v) * 100.0 for v in obs_arr[:, safe_idx]]
+            else:
+                series = [0.0] * n
             fig.add_trace(
                 go.Scatter(
                     x=steps, y=series, mode='lines+markers',
-                    line=dict(color=line_c, width=3),
-                    marker=dict(color=line_c, size=6),
+                    line=dict(color=line_c, width=4, shape='spline'),
+                    marker=dict(color=line_c, size=9, line=dict(color='#0a0e1a', width=1)),
                     fill='tozeroy', fillcolor=fill_c,
+                    hovertemplate='step %{x}<br>%{y:.1f}%<extra></extra>',
                 ),
                 row=row, col=col,
             )
             fig.update_yaxes(range=[0, 100], row=row, col=col,
-                             gridcolor='rgba(255,255,255,0.06)')
+                             gridcolor='rgba(255,255,255,0.08)',
+                             zerolinecolor='rgba(255,255,255,0.15)',
+                             tickfont=dict(color='#93a3bd'))
             fig.update_xaxes(row=row, col=col,
-                             gridcolor='rgba(255,255,255,0.06)')
+                             gridcolor='rgba(255,255,255,0.08)',
+                             zerolinecolor='rgba(255,255,255,0.15)',
+                             tickfont=dict(color='#93a3bd'))
         fig.update_layout(
-            height=520, showlegend=False,
-            title_text="Dynamic Crisis Trajectories",
+            height=560, showlegend=False, autosize=True,
             template='plotly_dark',
             paper_bgcolor='#0a0e1a',
-            plot_bgcolor='#111827',
+            plot_bgcolor='#0f1729',
             font=dict(color='#e6edf7', family='Inter'),
-            margin=dict(t=70, l=50, r=30, b=40),
+            margin=dict(t=80, l=60, r=40, b=50),
         )
+        # Restyle subplot title fonts
+        for ann in fig.layout.annotations:
+            ann.font = dict(color='#e6edf7', size=14, family='Inter')
         return fig
 
     def _create_metrics_plot(self, rewards: list, obs_arr: np.ndarray) -> go.Figure:
@@ -633,42 +642,56 @@ class VIDYADemo:
         fig = make_subplots(
             rows=1, cols=2,
             subplot_titles=('Cumulative Reward', 'Composite System Health'),
-            horizontal_spacing=0.12,
+            horizontal_spacing=0.14,
         )
-        cumsum_rewards = np.cumsum(rewards) if len(rewards) else np.array([0.0])
+        n = len(rewards) if rewards else 1
+        steps = list(range(n))
+        cumsum = list(np.cumsum(rewards)) if rewards else [0.0]
+        cumsum = [float(v) for v in cumsum]
         fig.add_trace(
             go.Scatter(
-                y=cumsum_rewards, mode='lines',
-                line=dict(color='#f5b942', width=2.5),
-                fill='tozeroy', fillcolor='rgba(245,185,66,0.15)',
+                x=steps, y=cumsum, mode='lines+markers',
+                line=dict(color='#f5b942', width=4, shape='spline'),
+                marker=dict(color='#f5b942', size=8, line=dict(color='#0a0e1a', width=1)),
+                fill='tozeroy', fillcolor='rgba(245,185,66,0.25)',
+                hovertemplate='step %{x}<br>reward %{y:.2f}<extra></extra>',
             ),
             row=1, col=1,
         )
         if obs_arr.size:
-            health = (
+            health_arr = (
                 0.25 * obs_arr[:, 0]   # enrollment
                 + 0.20 * obs_arr[:, 1] # attendance
                 + 0.20 * obs_arr[:, 3] # teacher_retention
                 + 0.15 * obs_arr[:, 8] # student_engagement
                 - 0.30 * obs_arr[:, 2] # dropout
             )
+            health = [float(v) * 100.0 for v in health_arr]
         else:
-            health = np.array([0.0])
+            health = [0.0]
         fig.add_trace(
             go.Scatter(
-                y=health, mode='lines',
-                line=dict(color='#6ea8ff', width=2.5),
-                fill='tozeroy', fillcolor='rgba(110,168,255,0.15)',
+                x=list(range(len(health))), y=health, mode='lines+markers',
+                line=dict(color='#6ea8ff', width=4, shape='spline'),
+                marker=dict(color='#6ea8ff', size=8, line=dict(color='#0a0e1a', width=1)),
+                fill='tozeroy', fillcolor='rgba(110,168,255,0.25)',
+                hovertemplate='step %{x}<br>health %{y:.1f}<extra></extra>',
             ),
             row=1, col=2,
         )
+        fig.update_yaxes(gridcolor='rgba(255,255,255,0.08)',
+                         tickfont=dict(color='#93a3bd'))
+        fig.update_xaxes(gridcolor='rgba(255,255,255,0.08)',
+                         tickfont=dict(color='#93a3bd'))
         fig.update_layout(
-            height=320, showlegend=False,
+            height=340, showlegend=False, autosize=True,
             template='plotly_dark',
-            paper_bgcolor='#0a0e1a', plot_bgcolor='#111827',
+            paper_bgcolor='#0a0e1a', plot_bgcolor='#0f1729',
             font=dict(color='#e6edf7', family='Inter'),
+            margin=dict(t=60, l=60, r=40, b=50),
         )
-        
+        for ann in fig.layout.annotations:
+            ann.font = dict(color='#e6edf7', size=13, family='Inter')
         return fig
     
     def _create_intervention_plot(self, interventions: Dict) -> go.Figure:
