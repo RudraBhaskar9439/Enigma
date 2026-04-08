@@ -147,12 +147,15 @@ def _llm_chat(messages: List[Dict], temperature: float = 0.6, max_tokens: int = 
         return f"[LLM error: {e}]"
 
 
-def get_agent_response(role: str, crisis_text: str, difficulty: str) -> str:
-    """Ask one agent persona how they read the crisis."""
+def get_agent_response(
+    role: str, crisis_text: str, difficulty: str, memory: Optional[List[Dict]] = None
+) -> str:
+    """Ask one agent persona how they read the crisis, conditioned on past lessons."""
     persona = AGENT_PERSONAS.get(role, "")
+    lessons = _format_memory_for_prompt(memory or [])
     sys_msg = (
         persona + " Respond in 4–6 sentences. Be concrete and grounded. "
-        "Avoid platitudes. Speak in first person."
+        "Avoid platitudes. Speak in first person." + lessons
     )
     user_msg = (
         f"A crisis is unfolding in your school: \"{crisis_text}\".\n"
@@ -168,17 +171,24 @@ def get_agent_response(role: str, crisis_text: str, difficulty: str) -> str:
     return out or f"[{role} unavailable — set API_BASE_URL/MODEL_NAME/HF_TOKEN to enable]"
 
 
-def get_final_verdict(crisis_text: str, agent_responses: Dict[str, str], difficulty: str) -> str:
+def get_final_verdict(
+    crisis_text: str,
+    agent_responses: Dict[str, str],
+    difficulty: str,
+    memory: Optional[List[Dict]] = None,
+) -> str:
     """Synthesize a mechanism-design verdict from all agent perspectives."""
     if not agent_responses:
         return "No agents selected. Pick at least one stakeholder above."
     transcript = "\n\n".join(f"## {r}\n{t}" for r, t in agent_responses.items())
+    lessons = _format_memory_for_prompt(memory or [])
     sys_msg = (
         "You are Vishwamitra — an AI mechanism designer. You read the perspectives "
         "of multiple stakeholders in an educational system and propose a concrete, "
         "deployable intervention bundle. You think in terms of game theory, "
         "incentive structures, and the Tragedy of the Commons. You DO NOT pick "
         "winners; you redesign the rules so cooperation becomes dominant for all."
+        + lessons
     )
     user_msg = (
         f"Crisis: \"{crisis_text}\" (severity: {difficulty})\n\n"
@@ -242,7 +252,7 @@ def get_dynamic_plot_config(crisis_text: str) -> List[Tuple[int, str]]:
 
 
 def save_feedback(crisis_text: str, verdict: str, rating: int, comment: str) -> str:
-    """Persist user feedback as JSONL — training data for future fine-tuning."""
+    """Persist user feedback as JSONL — used for retrieval-augmented learning."""
     record = {
         "timestamp": _dt.datetime.utcnow().isoformat() + "Z",
         "crisis": crisis_text,
@@ -253,11 +263,7 @@ def save_feedback(crisis_text: str, verdict: str, rating: int, comment: str) -> 
     try:
         with open(FEEDBACK_PATH, "a") as f:
             f.write(json.dumps(record) + "\n")
-        return (
-            f"✅ Feedback saved (#{_count_feedback()}).\n"
-            "This becomes part of the training set Vishwamitra uses to refine "
-            "future verdicts. Thank you."
-        )
+        return f"✅ Feedback saved (#{_count_feedback()})."
     except Exception as e:
         return f"❌ Could not save feedback: {e}"
 
@@ -270,6 +276,93 @@ def _count_feedback() -> int:
             return sum(1 for _ in f)
     except Exception:
         return 0
+
+
+# ---------------------------------------------------------------------------
+# Retrieval-augmented learning: feedback memory injected into prompts
+# ---------------------------------------------------------------------------
+
+_STOPWORDS = {
+    "the","a","an","is","are","was","were","of","to","in","on","and","or",
+    "for","with","at","by","from","as","this","that","it","its","be","been",
+    "has","have","had","but","not","no","so","if","then","than","over","into",
+}
+
+
+def _tokens(text: str) -> set:
+    if not text:
+        return set()
+    words = re.findall(r"[a-zA-Z]{3,}", text.lower())
+    return {w for w in words if w not in _STOPWORDS}
+
+
+def _load_memory() -> List[Dict]:
+    """Load all feedback records from disk."""
+    if not os.path.exists(FEEDBACK_PATH):
+        return []
+    out = []
+    try:
+        with open(FEEDBACK_PATH) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        out.append(json.loads(line))
+                    except Exception:
+                        continue
+    except Exception:
+        pass
+    return out
+
+
+def _retrieve_relevant(crisis_text: str, k: int = 3, extra: Optional[List[Dict]] = None) -> List[Dict]:
+    """Return up to k most relevant past-feedback records for this crisis.
+    Uses Jaccard token overlap — no embedding model required.
+    Records with rating >= 4 are positive lessons; rating <= 2 are anti-lessons.
+    Always includes any `extra` records first (e.g. just-submitted feedback)."""
+    pool = _load_memory()
+    if extra:
+        pool = list(extra) + pool
+    if not pool:
+        return []
+    target = _tokens(crisis_text)
+    if not target:
+        return pool[:k]
+    scored = []
+    for rec in pool:
+        rec_tokens = _tokens(rec.get("crisis", ""))
+        if not rec_tokens:
+            continue
+        overlap = len(target & rec_tokens) / max(len(target | rec_tokens), 1)
+        scored.append((overlap, rec))
+    scored.sort(key=lambda x: -x[0])
+    return [r for _, r in scored[:k]]
+
+
+def _format_memory_for_prompt(memory: List[Dict]) -> str:
+    """Render retrieved feedback as a 'past lessons' block for the LLM."""
+    if not memory:
+        return ""
+    blocks = []
+    for i, m in enumerate(memory, 1):
+        rating = int(m.get("rating", 3))
+        polarity = "✅ HIGHLY RATED" if rating >= 4 else ("⚠️ POORLY RATED — DO NOT REPEAT" if rating <= 2 else "MIXED")
+        blocks.append(
+            f"--- Past Lesson {i} ({polarity}, {rating}/5) ---\n"
+            f"Past crisis: {m.get('crisis','')[:300]}\n"
+            f"Verdict you gave: {m.get('verdict','')[:600]}\n"
+            f"User correction: {m.get('comment','') or '(none)'}"
+        )
+    return (
+        "\n\n=== PAST LESSONS FROM USER FEEDBACK ===\n"
+        "These are real verdicts you gave on similar crises and how the user "
+        "rated and corrected them. You MUST apply these lessons:\n"
+        "- Reuse approaches that were highly rated.\n"
+        "- AVOID repeating mistakes that were poorly rated.\n"
+        "- Incorporate every user correction below.\n\n"
+        + "\n\n".join(blocks)
+        + "\n=== END LESSONS ===\n"
+    )
 
 
 class VIDYADemo:
@@ -344,12 +437,49 @@ class VIDYADemo:
         n_steps: int = 100,
         use_interventions: bool = True,
     ) -> tuple:
-        """Run env + LLM advisory pipeline.
+        """Public Run Simulation entrypoint — runs the pipeline cold."""
+        return self._run_pipeline(selected_agents, n_steps, use_interventions, extra_memory=None)
 
-        Returns:
-            (perspectives_md, verdict_md, status_md,
-             trajectory_plot, metrics_plot, intervention_plot)
-        """
+    def submit_inline_feedback(
+        self,
+        rating: int,
+        comment: str,
+    ) -> tuple:
+        """Save feedback on the LAST verdict, then re-run the same scenario
+        with that feedback injected as a fresh lesson. Returns the same
+        outputs as run_simulation so the UI updates in place."""
+        if self.current_scenario is None or not getattr(self, "_last_verdict", ""):
+            empty_md = "❌ Run a simulation first, then submit feedback to refine the verdict."
+            return (empty_md, "", "", None, None, None)
+
+        crisis = getattr(self, "_last_crisis", "")
+        verdict = getattr(self, "_last_verdict", "")
+        save_feedback(crisis, verdict, int(rating), comment or "")
+
+        # Build a single-record extra-memory bundle so this feedback influences
+        # the very next call even before the file is re-read.
+        extra = [{
+            "crisis": crisis,
+            "verdict": verdict,
+            "rating": int(rating),
+            "comment": comment.strip(),
+        }]
+
+        return self._run_pipeline(
+            getattr(self, "_last_agents", []) or ["Student", "Teacher", "Administrator", "Policymaker"],
+            getattr(self, "_last_n_steps", 100),
+            getattr(self, "_last_use_interventions", True),
+            extra_memory=extra,
+        )
+
+    def _run_pipeline(
+        self,
+        selected_agents: List[str],
+        n_steps: int,
+        use_interventions: bool,
+        extra_memory: Optional[List[Dict]] = None,
+    ) -> tuple:
+        """Run env + LLM advisory pipeline, optionally seeded with extra memory."""
         if self.current_scenario is None:
             return ("❌ Please create a scenario first.", "", "",
                     None, None, None)
@@ -357,6 +487,14 @@ class VIDYADemo:
         try:
             crisis_text = self.current_scenario.get("label", "")
             difficulty = self.current_scenario.get("params", {}).get("difficulty", "medium")
+            self._last_crisis = crisis_text
+            self._last_agents = selected_agents
+            self._last_n_steps = n_steps
+            self._last_use_interventions = use_interventions
+
+            # Retrieve relevant past lessons from feedback history
+            memory = _retrieve_relevant(crisis_text, k=3, extra=extra_memory)
+            n_lessons = len(memory)
 
             # 1. Run the underlying env to collect a 13-dim trajectory
             env = _build_env(self.current_scenario, n_steps)
@@ -393,10 +531,10 @@ class VIDYADemo:
 
             obs_arr = np.stack(obs_history) if obs_history else np.zeros((1, 13))
 
-            # 2. LLM: agent perspectives
+            # 2. LLM: agent perspectives (conditioned on retrieved lessons)
             perspectives: Dict[str, str] = {}
             for role in (selected_agents or []):
-                perspectives[role] = get_agent_response(role, crisis_text, difficulty)
+                perspectives[role] = get_agent_response(role, crisis_text, difficulty, memory=memory)
 
             if perspectives:
                 perspectives_md = "## 🗣️ Stakeholder Perspectives\n\n" + "\n\n".join(
@@ -408,11 +546,10 @@ class VIDYADemo:
                     "Tick at least one stakeholder above to hear their perspective._"
                 )
 
-            # 3. LLM: final verdict
-            verdict_text = get_final_verdict(crisis_text, perspectives, difficulty)
+            # 3. LLM: final verdict (also conditioned on lessons)
+            verdict_text = get_final_verdict(crisis_text, perspectives, difficulty, memory=memory)
             verdict_md = "## ⚖️ Vishwamitra's Verdict\n\n" + verdict_text
             self._last_verdict = verdict_text
-            self._last_crisis = crisis_text
 
             # 4. LLM: dynamic plot config
             plot_config = get_dynamic_plot_config(crisis_text)
@@ -422,13 +559,19 @@ class VIDYADemo:
 
             # 5. Status
             total_reward = sum(rewards)
+            learning_line = (
+                f"- 🧠 Drawing on **{n_lessons} past lesson(s)** from user feedback"
+                if n_lessons > 0
+                else "- 🧠 No past feedback yet — submit ratings below to teach Vishwamitra"
+            )
             status_md = (
                 f"### Episode Summary\n"
                 f"- Crisis: **{crisis_text}**\n"
                 f"- Stakeholders consulted: **{', '.join(selected_agents) if selected_agents else 'none'}**\n"
                 f"- Steps simulated: **{step}**\n"
                 f"- Cumulative reward: **{total_reward:+.2f}**\n"
-                f"- Terminated early: **{'yes' if done and step < n_steps else 'no'}**"
+                f"- Terminated early: **{'yes' if done and step < n_steps else 'no'}**\n"
+                f"{learning_line}"
             )
 
             return perspectives_md, verdict_md, status_md, trajectory_plot, metrics_plot, intervention_plot
@@ -914,6 +1057,23 @@ def create_spaces_demo() -> gr.Blocks:
                     use_interventions = gr.Checkbox(True, label="Enable mechanism-design interventions")
                     run_btn = gr.Button("Run Simulation", variant="primary")
 
+                    gr.HTML('<div class="vm-section-h">05 · Teach Vishwamitra (Feedback Loop)</div>')
+                    gr.Markdown(
+                        "_Rate the verdict above. Submitting feedback saves it as a "
+                        "lesson and **immediately re-runs** the simulation with that "
+                        "lesson injected — so you see the improved answer in place._"
+                    )
+                    fb_rating = gr.Slider(
+                        1, 5, value=3, step=1,
+                        label="Verdict quality (1 = useless, 5 = excellent)",
+                    )
+                    fb_comment = gr.Textbox(
+                        label="What would you change?",
+                        placeholder="Be specific. What did Vishwamitra miss? What should it have said instead?",
+                        lines=3,
+                    )
+                    fb_submit = gr.Button("Submit Feedback & Retry", variant="secondary")
+
                 with gr.Column(scale=2):
                     perspectives_md = gr.Markdown("_Run a simulation to hear from your stakeholders._")
                     verdict_md = gr.Markdown("")
@@ -935,34 +1095,6 @@ def create_spaces_demo() -> gr.Blocks:
                 with gr.Column(scale=2):
                     compare_status = gr.Textbox(label="Comparison Report", lines=12)
                     compare_plot = gr.Plot()
-
-        with gr.Tab("Feedback"):
-            gr.HTML('<div class="vm-section-h">Train Vishwamitra with your judgement</div>')
-            gr.Markdown(
-                "Every piece of feedback you submit is appended to a structured "
-                "training set. Future fine-tuning runs use these labelled "
-                "(crisis → verdict → rating → comment) tuples to improve which "
-                "intervention bundles Vishwamitra proposes for which crises."
-            )
-            fb_crisis = gr.Textbox(
-                label="Which crisis are you reviewing?",
-                placeholder="Paste or describe the crisis you just ran a simulation on.",
-                lines=2,
-            )
-            fb_verdict = gr.Textbox(
-                label="The verdict Vishwamitra gave",
-                placeholder="Paste the verdict text from the simulator.",
-                lines=4,
-            )
-            fb_rating = gr.Slider(1, 5, value=3, step=1,
-                                  label="Quality of the verdict (1 = useless, 5 = excellent)")
-            fb_comment = gr.Textbox(
-                label="What would you change?",
-                placeholder="Be specific. What did the agent miss? What would you have proposed instead?",
-                lines=4,
-            )
-            fb_submit = gr.Button("Submit Feedback", variant="primary")
-            fb_status = gr.Markdown("")
 
         with gr.Tab("About"):
             gr.HTML(ABOUT_HTML)
@@ -988,9 +1120,10 @@ def create_spaces_demo() -> gr.Blocks:
         )
 
         fb_submit.click(
-            fn=save_feedback,
-            inputs=[fb_crisis, fb_verdict, fb_rating, fb_comment],
-            outputs=[fb_status],
+            fn=demo.submit_inline_feedback,
+            inputs=[fb_rating, fb_comment],
+            outputs=[perspectives_md, verdict_md, sim_status,
+                     trajectory_plot, metrics_plot, intervention_plot],
         )
         
         compare_btn.click(
