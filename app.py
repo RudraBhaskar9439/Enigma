@@ -417,115 +417,281 @@ class VIDYADemo:
 
 
 # Create Gradio interface
+CUSTOM_CSS = """
+:root {
+    --vm-bg: #0a0e1a;
+    --vm-bg-2: #111827;
+    --vm-surface: #1a2235;
+    --vm-border: #243049;
+    --vm-text: #e6edf7;
+    --vm-text-dim: #93a3bd;
+    --vm-accent: #f5b942;
+    --vm-accent-2: #6ea8ff;
+    --vm-good: #4ade80;
+    --vm-bad: #f87171;
+}
+
+.gradio-container {
+    background: radial-gradient(ellipse at top, #131a2e 0%, var(--vm-bg) 60%) !important;
+    color: var(--vm-text) !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+    max-width: 1320px !important;
+    margin: 0 auto !important;
+}
+
+.vm-hero {
+    padding: 48px 56px 40px 56px;
+    border-radius: 20px;
+    background: linear-gradient(135deg, rgba(110,168,255,0.10), rgba(245,185,66,0.06));
+    border: 1px solid var(--vm-border);
+    margin-bottom: 28px;
+    position: relative;
+    overflow: hidden;
+}
+.vm-hero::before {
+    content: "";
+    position: absolute; inset: 0;
+    background: radial-gradient(circle at 90% 0%, rgba(245,185,66,0.10), transparent 50%);
+    pointer-events: none;
+}
+.vm-eyebrow {
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    font-size: 12px;
+    color: var(--vm-accent);
+    font-weight: 600;
+    margin-bottom: 12px;
+}
+.vm-title {
+    font-size: 56px;
+    line-height: 1.05;
+    font-weight: 800;
+    background: linear-gradient(135deg, #ffffff 0%, #93a3bd 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin: 0 0 14px 0;
+}
+.vm-tagline {
+    font-size: 20px;
+    color: var(--vm-text-dim);
+    font-weight: 400;
+    max-width: 780px;
+    margin-bottom: 22px;
+}
+.vm-pills { display: flex; gap: 10px; flex-wrap: wrap; }
+.vm-pill {
+    padding: 6px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--vm-border);
+    background: rgba(255,255,255,0.03);
+    font-size: 12px;
+    color: var(--vm-text-dim);
+    font-weight: 500;
+}
+.vm-section-h {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--vm-text-dim);
+    font-weight: 600;
+    margin: 4px 0 12px 0;
+}
+.tabs > .tab-nav button {
+    background: transparent !important;
+    color: var(--vm-text-dim) !important;
+    border: none !important;
+    font-weight: 500 !important;
+    padding: 14px 22px !important;
+    font-size: 14px !important;
+}
+.tabs > .tab-nav button.selected {
+    color: var(--vm-text) !important;
+    border-bottom: 2px solid var(--vm-accent) !important;
+}
+.gr-button-primary {
+    background: linear-gradient(135deg, var(--vm-accent), #e09b1f) !important;
+    color: #0a0e1a !important;
+    border: none !important;
+    font-weight: 600 !important;
+    border-radius: 10px !important;
+}
+.gr-button-secondary {
+    background: rgba(110,168,255,0.10) !important;
+    color: var(--vm-accent-2) !important;
+    border: 1px solid rgba(110,168,255,0.30) !important;
+    border-radius: 10px !important;
+}
+.gr-box, .gr-form, .gr-panel {
+    background: var(--vm-surface) !important;
+    border: 1px solid var(--vm-border) !important;
+    border-radius: 14px !important;
+}
+.vm-about h2 {
+    font-size: 30px; font-weight: 700; margin-top: 28px; color: var(--vm-text);
+    border-left: 3px solid var(--vm-accent); padding-left: 14px;
+}
+.vm-about h3 {
+    font-size: 18px; font-weight: 600; margin-top: 22px; color: var(--vm-accent-2);
+}
+.vm-about p, .vm-about li { color: var(--vm-text-dim); line-height: 1.7; font-size: 15px; }
+.vm-about strong { color: var(--vm-text); font-weight: 600; }
+.vm-quote {
+    border-left: 3px solid var(--vm-accent);
+    padding: 16px 22px;
+    background: rgba(245,185,66,0.04);
+    border-radius: 0 10px 10px 0;
+    font-style: italic;
+    color: var(--vm-text);
+    margin: 22px 0;
+}
+"""
+
+
+HERO_HTML = """
+<div class="vm-hero">
+  <div class="vm-eyebrow">Meta · PyTorch · OpenEnv Round 1</div>
+  <h1 class="vm-title">Vishwamitra</h1>
+  <p class="vm-tagline">Seeing clearly. Redesigning the game. A multi-agent reinforcement learning environment that learns to rewrite the rules of educational collapse before it happens.</p>
+  <div class="vm-pills">
+    <span class="vm-pill">Mechanism Design</span>
+    <span class="vm-pill">Game Theory</span>
+    <span class="vm-pill">Meta-RL</span>
+    <span class="vm-pill">Built on Meta OpenEnv</span>
+    <span class="vm-pill">LLM-Graded Policies</span>
+  </div>
+</div>
+"""
+
+
+ABOUT_HTML = """
+<div class="vm-about">
+
+<h2>The Problem</h2>
+<p>Public education doesn't fail because of bad people — it fails because of a <strong>coordination problem</strong>. Every stakeholder makes a locally rational choice: the student stops attending, the teacher burns out, the administrator delays, the policymaker redirects funds. None of them chose collapse — but all of them, acting independently, produce it together.</p>
+<p>This is the <strong>Tragedy of the Commons</strong> applied to education. It is a game theory problem, not a resource problem.</p>
+
+<h2>What Vishwamitra Is</h2>
+<ul>
+  <li>A multi-agent reinforcement learning environment built on <strong>Meta's OpenEnv framework</strong>.</li>
+  <li>Models a school as a shared resource being depleted by four rational agents playing dominant strategies simultaneously.</li>
+  <li>Trains an RL agent to detect cascading defection early and deploy targeted interventions before the system crosses an irreversible collapse threshold.</li>
+  <li>The agent is not a player inside the game — it is a <strong>mechanism designer</strong> that rewrites the incentive structure so cooperation becomes the dominant strategy for every player.</li>
+</ul>
+
+<h2>The Game Theory Stack</h2>
+<ul>
+  <li><strong>Prisoner's dilemma</strong> — each individual agent's rational move is to defect, regardless of what others do.</li>
+  <li><strong>Tragedy of the Commons</strong> — cumulative defection across four players depletes the shared resource no single agent owned.</li>
+  <li><strong>Information asymmetry</strong> — reported state diverges from real state; the agent must detect data corruption before acting.</li>
+  <li><strong>Signalling games</strong> — one agent's visible action changes the defection calculus for every other agent in the system.</li>
+  <li><strong>Mechanism design</strong> — the agent's core task is not to play better but to redesign the rules so the Nash equilibrium shifts from collapse to cooperation.</li>
+</ul>
+
+<h2>How It Works</h2>
+<ul>
+  <li>Four player-agents — Student, Teacher, Administrator, Policymaker — each have parameterized behavioral models with defection thresholds calibrated from real data.</li>
+  <li>The RL meta-agent observes system state each timestep and selects from a menu of <strong>12 intervention levers</strong> — salary signals, transparency triggers, commitment devices, trust anchors.</li>
+  <li>Episodes run across one simulated academic year with a school health score tracking the commons in real time.</li>
+  <li>The agent learns across thousands of episodes that timing matters as much as content — the same intervention three weeks earlier can produce four times the outcome improvement.</li>
+  <li>It learns that single-lever policies fail — the problem requires bundles.</li>
+  <li>It learns that data integrity must come before structural intervention.</li>
+</ul>
+
+<h2>Why It Is Real-World Applicable</h2>
+<ul>
+  <li>Every discovered policy is expressed in plain language and scored by an <strong>LLM grader</strong> on ethical soundness, practical deployability, and generalizability.</li>
+  <li>Output is not just a reward curve — it is a human-readable recommendation a school principal, education department, or NGO can act on.</li>
+  <li>Asks the question dropout prediction never does: not <em>who</em> is at risk, but <em>what changes the game</em> for everyone at risk simultaneously.</li>
+  <li>Evaluated across six structurally distinct archetypes covering sequential cascades, fear spirals, generational lock-in, and data-corruption environments.</li>
+</ul>
+
+<h2>The Name</h2>
+<div class="vm-quote">
+Vishwamitra did not defeat the existing order — he created a new one. When the rules of the world would not serve his student, he rewrote them. The agent learns to do exactly that.
+</div>
+
+</div>
+"""
+
+
 def create_spaces_demo() -> gr.Blocks:
     """Create the Hugging Face Spaces demo interface."""
-    
+
     demo = VIDYADemo()
-    
-    with gr.Blocks(title="VIDYA - Educational Crisis Simulator", theme=gr.themes.Soft()) as app:
-        gr.Markdown("""
-        # 🎓 VIDYA: Educational System Crisis Simulator
-        
-        **Test AI policies for managing educational crises**
-        
-        This demo lets you:
-        - Simulate crisis scenarios (funding cuts, teacher shortages, etc.)
-        - Test RL-trained policies vs random interventions
-        - Compare different crisis management strategies
-        
-        *Built with reinforcement learning and meta-learning (MAML)*
-        """)
-        
-        with gr.Tab("🎮 Run Simulation"):
+
+    with gr.Blocks(
+        title="Vishwamitra — Mechanism Design for Educational Commons",
+        theme=gr.themes.Base(
+            primary_hue=gr.themes.colors.amber,
+            secondary_hue=gr.themes.colors.blue,
+            neutral_hue=gr.themes.colors.slate,
+            font=[gr.themes.GoogleFont("Inter"), "system-ui", "sans-serif"],
+        ),
+        css=CUSTOM_CSS,
+    ) as app:
+
+        gr.HTML(HERO_HTML)
+
+        with gr.Tab("Simulator"):
             with gr.Row():
                 with gr.Column(scale=1):
-                    gr.Markdown("### 1. Load Policy")
+                    gr.HTML('<div class="vm-section-h">01 · Load Policy</div>')
                     model_type = gr.Dropdown(
                         choices=["meta_rl", "ppo_standard", "random"],
                         value="meta_rl",
-                        label="Select Model"
+                        label="Policy",
                     )
-                    load_btn = gr.Button("Load Model", variant="primary")
+                    load_btn = gr.Button("Load Policy", variant="primary")
                     load_status = gr.Textbox(label="Status", interactive=False)
-                    
-                    gr.Markdown("### 2. Create Scenario")
+
+                    gr.HTML('<div class="vm-section-h">02 · Configure Scenario</div>')
                     scenario_type = gr.Dropdown(
-                        choices=["funding_crisis", "teacher_shortage"],
+                        choices=["funding_crisis", "teacher_shortage", "pandemic_recovery", "conflict_zone"],
                         value="funding_crisis",
-                        label="Crisis Type"
+                        label="Crisis Archetype",
                     )
                     difficulty = gr.Dropdown(
                         choices=["easy", "medium", "hard"],
                         value="medium",
-                        label="Difficulty"
+                        label="Difficulty",
                     )
-                    
+
                     with gr.Row():
                         initial_budget = gr.Slider(30, 100, 70, label="Initial Budget (%)")
                         teacher_retention = gr.Slider(30, 100, 75, label="Teacher Retention (%)")
-                    
                     enrollment_rate = gr.Slider(50, 100, 85, label="Initial Enrollment (%)")
-                    
+
                     create_btn = gr.Button("Create Scenario", variant="secondary")
-                    scenario_status = gr.Textbox(label="Scenario Status", interactive=False)
-                    
-                    gr.Markdown("### 3. Run")
-                    n_steps = gr.Slider(50, 200, 100, step=10, label="Simulation Steps")
-                    use_interventions = gr.Checkbox(True, label="Use AI Interventions")
-                    run_btn = gr.Button("▶️ Run Simulation", variant="primary")
-                
+                    scenario_status = gr.Textbox(label="Scenario", interactive=False)
+
+                    gr.HTML('<div class="vm-section-h">03 · Run Episode</div>')
+                    n_steps = gr.Slider(50, 200, 100, step=10, label="Episode Length")
+                    use_interventions = gr.Checkbox(True, label="Enable mechanism-design interventions")
+                    run_btn = gr.Button("Run Simulation", variant="primary")
+
                 with gr.Column(scale=2):
-                    sim_status = gr.Textbox(label="Results", lines=8)
-                    
+                    sim_status = gr.Textbox(label="Episode Summary", lines=8)
                     with gr.Tabs():
-                        with gr.Tab("📊 Trajectories"):
+                        with gr.Tab("System Trajectories"):
                             trajectory_plot = gr.Plot()
-                        with gr.Tab("📈 Metrics"):
+                        with gr.Tab("Reward & Stability"):
                             metrics_plot = gr.Plot()
-                        with gr.Tab("🎛️ Interventions"):
+                        with gr.Tab("Intervention Heatmap"):
                             intervention_plot = gr.Plot()
-        
-        with gr.Tab("⚖️ Compare Policies"):
+
+        with gr.Tab("Compare Policies"):
             with gr.Row():
                 with gr.Column(scale=1):
-                    gr.Markdown("### Compare RL vs Random Baseline")
-                    compare_steps = gr.Slider(20, 100, 50, step=10, label="Steps")
-                    compare_btn = gr.Button("Compare", variant="primary")
-                
+                    gr.HTML('<div class="vm-section-h">RL vs Random Baseline</div>')
+                    compare_steps = gr.Slider(20, 100, 50, step=10, label="Episode Length")
+                    compare_btn = gr.Button("Run Comparison", variant="primary")
                 with gr.Column(scale=2):
-                    compare_status = gr.Textbox(label="Comparison Results", lines=12)
+                    compare_status = gr.Textbox(label="Comparison Report", lines=12)
                     compare_plot = gr.Plot()
-        
-        with gr.Tab("ℹ️ About"):
-            gr.Markdown("""
-            ## About VIDYA
-            
-            VIDYA is a reinforcement learning environment for simulating educational system crises.
-            
-            ### Key Features:
-            - **Meta-Learning (MAML)**: Policies that adapt quickly to new crisis scenarios
-            - **LLM Integration**: Natural language interface for scenario creation
-            - **RL-LLM Arbitration**: Combines RL actions with LLM reasoning
-            
-            ### Scenarios:
-            1. **Funding Crisis**: Sudden budget cuts affecting operations
-            2. **Teacher Shortage**: Mass departures creating staffing crisis
-            3. **Pandemic Recovery**: Post-pandemic learning loss and enrollment drops
-            4. **Conflict Zone**: Education under protracted armed conflict
-            
-            ### Interventions Available:
-            - 💰 Funding boost
-            - 👨‍🏫 Teacher incentives
-            - 🎓 Student scholarships
-            - 📊 Attendance mandates
-            - 🔄 Resource reallocation
-            - 📢 Transparency reports
-            - 👥 Staff hiring
-            - 💬 Counseling programs
-            
-            ---
-            *Built with PyTorch, Stable-Baselines3, and Gradio*
-            """)
+
+        with gr.Tab("About"):
+            gr.HTML(ABOUT_HTML)
         
         # Event handlers
         load_btn.click(

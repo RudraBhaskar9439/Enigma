@@ -1,8 +1,8 @@
 ---
-title: VIDYA Educational Crisis Simulator
-emoji: 🎓
-colorFrom: blue
-colorTo: purple
+title: Vishwamitra — Mechanism Design for Educational Commons
+emoji: 🪔
+colorFrom: yellow
+colorTo: indigo
 sdk: gradio
 sdk_version: 4.0.0
 app_file: app.py
@@ -10,9 +10,11 @@ pinned: false
 license: mit
 ---
 
-# VIDYA: Educational System Crisis Simulator
+# Vishwamitra
 
-Interactive demo for testing AI policies on educational crisis scenarios using Meta-RL (MAML).
+**Seeing clearly. Redesigning the game.**
+
+A multi-agent reinforcement learning environment built on Meta's OpenEnv framework. Models a school as a shared resource being depleted by four rational agents playing dominant strategies simultaneously, and trains an RL meta-agent to act as a *mechanism designer* — rewriting the incentive structure so cooperation becomes the dominant strategy for every player before the system crosses an irreversible collapse threshold.
 
 ## Features
 
