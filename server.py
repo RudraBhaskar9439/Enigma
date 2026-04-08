@@ -237,7 +237,12 @@ except Exception as _e:  # noqa: BLE001
     print(f"[server] Gradio UI not mounted: {_e}")
 
 
-if __name__ == "__main__":
+def serve() -> None:
+    """Console-script entry point: launches uvicorn on $PORT (default 7860)."""
     import uvicorn
     port = int(os.environ.get("PORT", "7860"))
     uvicorn.run("server:api", host="0.0.0.0", port=port, log_level="info")
+
+
+if __name__ == "__main__":
+    serve()

@@ -34,6 +34,7 @@ classifiers = [
 ]
 
 dependencies = [
+    "openenv-core>=0.2.0",
     "gradio>=4.0.0",
     "plotly>=5.0.0",
     "torch>=2.0.0",
@@ -59,8 +60,8 @@ Repository = "https://github.com/RudraBhaskar9439/Enigma"
 "Bug Tracker" = "https://github.com/RudraBhaskar9439/Enigma/issues"
 
 [project.scripts]
-vishwamitra-inference = "inference:main"
-vishwamitra-server = "server:api"
+server = "server:serve"
+inference = "inference:main"
 
 [tool.setuptools]
 py-modules = ["app", "server", "inference", "validate"]
