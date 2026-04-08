@@ -113,7 +113,10 @@ AGENT_PERSONAS = {
     ),
 }
 
-FEEDBACK_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "feedback.jsonl")
+FEEDBACK_PATH = os.environ.get(
+    "FEEDBACK_PATH",
+    os.path.join(os.environ.get("HOME", os.path.dirname(os.path.abspath(__file__))), "feedback.jsonl"),
+)
 
 
 def _llm_client():
