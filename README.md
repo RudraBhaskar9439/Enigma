@@ -55,9 +55,9 @@ This is the **Tragedy of the Commons** applied to education. It is a **game theo
 
 ## 🏛️ Architecture
 
-> 📐 **Architecture diagram placeholder** — drop your final diagram in `docs/architecture.png` and reference it below.
-
-<!-- ![Vishwamitra Architecture](docs/architecture.png) -->
+<p align="center">
+  <img src="docs/architecture.svg" alt="Vishwamitra Architecture" width="900" />
+</p>
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐

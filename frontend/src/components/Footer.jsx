@@ -4,7 +4,7 @@ export default function Footer() {
       <div className="footer-inner">
         <div>
           <div className="brand" style={{ marginBottom: 12 }}>
-            <div className="brand-logo" />
+            <img src="/vidya-logo.jpeg" alt="Vishwamitra" className="brand-logo-img" />
             <span>Vishwamitra</span>
           </div>
           <p className="footer-brand-text">

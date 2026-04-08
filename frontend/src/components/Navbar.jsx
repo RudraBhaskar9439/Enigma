@@ -1,4 +1,13 @@
+import { useEffect, useState } from 'react'
+
 export default function Navbar({ onHome, onLaunch, onNavigate }) {
+  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light')
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('theme', theme)
+  }, [theme])
+
   function go(id) {
     if (onNavigate) onNavigate()
     requestAnimationFrame(() => {
@@ -9,7 +18,7 @@ export default function Navbar({ onHome, onLaunch, onNavigate }) {
     <header className="nav">
       <div className="nav-inner">
         <div className="brand" onClick={onHome} style={{ cursor: 'pointer' }}>
-          <div className="brand-logo" />
+          <img src="/vidya-logo.jpeg" alt="Vishwamitra" className="brand-logo-img" />
           <span>Vishwamitra</span>
         </div>
         <nav className="nav-links">
@@ -17,7 +26,21 @@ export default function Navbar({ onHome, onLaunch, onNavigate }) {
           <button onClick={() => go('how')}>How it works</button>
           <button onClick={() => go('get-started')}>Get started</button>
         </nav>
-        <button className="nav-cta" onClick={onLaunch}>Launch app</button>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <button
+            className="theme-toggle"
+            onClick={() => setTheme(t => t === 'light' ? 'dark' : 'light')}
+            aria-label="Toggle theme"
+            title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+          >
+            {theme === 'light' ? (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+            )}
+          </button>
+          <button className="nav-cta" onClick={onLaunch}>Launch app</button>
+        </div>
       </div>
     </header>
   )
