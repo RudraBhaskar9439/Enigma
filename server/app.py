@@ -33,6 +33,8 @@ from env.scenarios.pandemic_recovery import PandemicRecoveryScenario
 from env.scenarios.conflict_zone import ConflictZoneScenario
 from env.scenarios.indian_context import IndianContextScenario
 
+from fastapi.middleware.cors import CORSMiddleware
+
 
 SCENARIO_MAP = {
     "funding_cut": FundingCutScenario,
@@ -151,6 +153,123 @@ _OPENENV_INFO = {
     "endpoints": ["/reset", "/step", "/state", "/healthz", "/info"],
     "scenarios": list(SCENARIO_MAP.keys()),
 }
+
+
+api.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ---------------------------------------------------------------------------
+# Simulator JSON API (wraps the Gradio VIDYADemo handlers so a React frontend
+# can call them over plain HTTP).
+# ---------------------------------------------------------------------------
+
+_demo_instance = None
+
+
+def _get_demo():
+    global _demo_instance
+    if _demo_instance is None:
+        import app as _vish_app  # noqa: E402
+        _demo_instance = _vish_app.VIDYADemo()
+    return _demo_instance
+
+
+class LoadPolicyRequest(BaseModel):
+    model_type: str = "meta_rl"
+
+
+class CreateScenarioRequest(BaseModel):
+    crisis_text: str = ""
+    difficulty: str = "medium"
+    initial_budget: float = 70
+    teacher_retention: float = 75
+    enrollment_rate: float = 85
+
+
+class RunSimRequest(BaseModel):
+    selected_agents: List[str] = ["Student", "Teacher", "Administrator", "Policymaker"]
+    n_steps: int = 100
+    use_interventions: bool = True
+
+
+class FeedbackRequest(BaseModel):
+    rating: int = 3
+    comment: str = ""
+
+
+class CompareRequest(BaseModel):
+    n_steps: int = 50
+
+
+def _figure_to_json(fig):
+    if fig is None:
+        return None
+    try:
+        import json as _json
+        import plotly  # type: ignore
+        return _json.loads(plotly.io.to_json(fig))
+    except Exception:
+        return None
+
+
+@api.post("/api/load_policy")
+def api_load_policy(body: LoadPolicyRequest):
+    msg = _get_demo().load_model(body.model_type)
+    return {"status": msg}
+
+
+@api.post("/api/create_scenario")
+def api_create_scenario(body: CreateScenarioRequest):
+    msg = _get_demo().create_scenario(
+        body.crisis_text,
+        body.difficulty,
+        float(body.initial_budget),
+        float(body.teacher_retention),
+        float(body.enrollment_rate),
+    )
+    return {"status": msg}
+
+
+@api.post("/api/run_simulation")
+def api_run_simulation(body: RunSimRequest):
+    perspectives, verdict, status, traj, metrics, interv = _get_demo().run_simulation(
+        body.selected_agents, int(body.n_steps), bool(body.use_interventions)
+    )
+    return {
+        "perspectives_md": perspectives,
+        "verdict_md": verdict,
+        "status_md": status,
+        "trajectory_plot": _figure_to_json(traj),
+        "metrics_plot": _figure_to_json(metrics),
+        "intervention_plot": _figure_to_json(interv),
+    }
+
+
+@api.post("/api/feedback")
+def api_feedback(body: FeedbackRequest):
+    perspectives, verdict, status, traj, metrics, interv = _get_demo().submit_inline_feedback(
+        int(body.rating), body.comment
+    )
+    return {
+        "perspectives_md": perspectives,
+        "verdict_md": verdict,
+        "status_md": status,
+        "trajectory_plot": _figure_to_json(traj),
+        "metrics_plot": _figure_to_json(metrics),
+        "intervention_plot": _figure_to_json(interv),
+    }
+
+
+@api.post("/api/compare")
+def api_compare(body: CompareRequest):
+    report, fig = _get_demo().compare_policies(int(body.n_steps))
+    return {"report": report, "plot": _figure_to_json(fig)}
 
 
 @api.get("/info")
