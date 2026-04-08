@@ -448,30 +448,40 @@ class VIDYADemo:
             horizontal_spacing=0.12,
         )
         colors = [
-            ('#6ea8ff', 'rgba(110,168,255,0.15)'),
-            ('#f87171', 'rgba(248,113,113,0.15)'),
-            ('#4ade80', 'rgba(74,222,128,0.15)'),
-            ('#f5b942', 'rgba(245,185,66,0.15)'),
+            ('#6ea8ff', 'rgba(110,168,255,0.18)'),
+            ('#f87171', 'rgba(248,113,113,0.18)'),
+            ('#4ade80', 'rgba(74,222,128,0.18)'),
+            ('#f5b942', 'rgba(245,185,66,0.18)'),
         ]
         positions = [(1, 1), (1, 2), (2, 1), (2, 2)]
         steps = np.arange(obs_arr.shape[0])
         for (idx, _title), (line_c, fill_c), (row, col) in zip(plot_config, colors, positions):
-            series = obs_arr[:, idx] if idx < obs_arr.shape[1] else np.zeros_like(steps)
+            # Skip the 'step' index (12) — not a meaningful metric to chart.
+            safe_idx = idx if 0 <= idx < 12 else 0
+            raw = obs_arr[:, safe_idx] if safe_idx < obs_arr.shape[1] else np.zeros_like(steps, dtype=float)
+            # Most obs are normalized to [0,1]; show as percent for readability.
+            series = np.asarray(raw, dtype=float) * 100.0
             fig.add_trace(
                 go.Scatter(
-                    x=steps, y=series, mode='lines',
-                    line=dict(color=line_c, width=2.5),
+                    x=steps, y=series, mode='lines+markers',
+                    line=dict(color=line_c, width=3),
+                    marker=dict(color=line_c, size=6),
                     fill='tozeroy', fillcolor=fill_c,
                 ),
                 row=row, col=col,
             )
+            fig.update_yaxes(range=[0, 100], row=row, col=col,
+                             gridcolor='rgba(255,255,255,0.06)')
+            fig.update_xaxes(row=row, col=col,
+                             gridcolor='rgba(255,255,255,0.06)')
         fig.update_layout(
-            height=500, showlegend=False,
+            height=520, showlegend=False,
             title_text="Dynamic Crisis Trajectories",
             template='plotly_dark',
             paper_bgcolor='#0a0e1a',
             plot_bgcolor='#111827',
             font=dict(color='#e6edf7', family='Inter'),
+            margin=dict(t=70, l=50, r=30, b=40),
         )
         return fig
 
