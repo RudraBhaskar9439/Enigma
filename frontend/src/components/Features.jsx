@@ -1,11 +1,6 @@
 export default function Features() {
   const items = [
     {
-      icon: '◆',
-      title: 'Meta-RL Crisis Engine',
-      body: 'A DropoutCommons environment trained with MAML across funding cuts, teacher shortages, pandemic recovery, and conflict zones. Adapts to new crises in just a few episodes.',
-    },
-    {
       icon: '✦',
       title: 'Multi-Stakeholder LLM Agents',
       body: 'Hear from Student, Teacher, Administrator and Policymaker personas. Every voice is consulted before a verdict is delivered.',
@@ -13,7 +8,7 @@ export default function Features() {
     {
       icon: '◐',
       title: 'Empathic Voice Mode',
-      body: 'Speak naturally to Vishwamitra via Hume EVI. The agent listens, reflects, and responds with an emotionally intelligent voice.',
+      body: 'Speak naturally to Vishwamitra. The agent listens, reflects, and responds with an emotionally intelligent voice.',
     },
     {
       icon: '↻',

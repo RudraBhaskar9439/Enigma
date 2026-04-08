@@ -727,4 +727,18 @@ textarea.input { resize: vertical; }
 [data-theme="dark"] .section-eyebrow { background: #142544; color: #93c5fd; border-color: #1f3560; }
 [data-theme="dark"] .section.alt { background: linear-gradient(180deg, rgba(15, 26, 48, 0.6), rgba(10, 14, 26, 0)); }
 [data-theme="dark"] .bubble.bot { background: #142544; color: var(--ink); border-color: #1f3560; }
+[data-theme="dark"] .btn-secondary {
+  background: #11172a;
+  color: var(--ink);
+  border-color: #1f3560;
+}
+[data-theme="dark"] .btn-secondary:hover {
+  background: #142544;
+  border-color: #2a4775;
+  color: #93c5fd;
+}
+[data-theme="dark"] .nav-links button { color: #93a3bd; }
+[data-theme="dark"] .nav-links button:hover { color: #bfdbfe; background: #142544; }
+[data-theme="dark"] .modetabs button { background: #11172a; color: #93a3bd; border-color: #1f3560; }
+[data-theme="dark"] .modetabs button:hover { color: #bfdbfe; }
 

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { VIDYA_LOGO } from '../assets/logo.js'
 
 export default function Navbar({ onHome, onLaunch, onNavigate }) {
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light')
@@ -18,7 +19,7 @@ export default function Navbar({ onHome, onLaunch, onNavigate }) {
     <header className="nav">
       <div className="nav-inner">
         <div className="brand" onClick={onHome} style={{ cursor: 'pointer' }}>
-          <img src="/vidya-logo.jpeg" alt="Vishwamitra" className="brand-logo-img" />
+          <img src={VIDYA_LOGO} alt="Vishwamitra" className="brand-logo-img" />
           <span>Vishwamitra</span>
         </div>
         <nav className="nav-links">

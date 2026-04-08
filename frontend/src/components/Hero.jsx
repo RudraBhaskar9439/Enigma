@@ -11,7 +11,7 @@ export default function Hero({ onStart }) {
         teach Vishwamitra with your feedback — in voice or text.
       </p>
       <div className="hero-cta">
-        <button className="btn btn-primary" onClick={onStart}>Open simulator</button>
+        <button className="btn btn-primary" onClick={onStart}>Launch</button>
         <a className="btn btn-secondary" href="#how">How it works</a>
       </div>
     </section>

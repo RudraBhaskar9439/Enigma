@@ -1,10 +1,12 @@
+import { VIDYA_LOGO } from '../assets/logo.js'
+
 export default function Footer() {
   return (
     <footer className="footer">
       <div className="footer-inner">
         <div>
           <div className="brand" style={{ marginBottom: 12 }}>
-            <img src="/vidya-logo.jpeg" alt="Vishwamitra" className="brand-logo-img" />
+            <img src={VIDYA_LOGO} alt="Vishwamitra" className="brand-logo-img" />
             <span>Vishwamitra</span>
           </div>
           <p className="footer-brand-text">
