@@ -216,14 +216,15 @@ def get_dynamic_plot_config(crisis_text: str) -> List[Tuple[int, str]]:
     sys_msg = (
         "You are a data visualization curator. Given a crisis description, you "
         "pick the FOUR most relevant metrics to chart and give each chart a "
-        "specific, vivid title that reflects the crisis being analyzed."
+        "tight, vivid title (MAXIMUM 5 words, no more than 32 characters)."
     )
     user_msg = (
         f"Crisis: \"{crisis_text}\"\n\n"
         f"Available metrics:\n{options}\n\n"
         "Reply with ONLY a JSON object of this exact form:\n"
-        '{"plots": [{"index": <int>, "title": "<short vivid title>"}, ...]}\n'
-        "Choose exactly 4. Use indices from the list above."
+        '{"plots": [{"index": <int>, "title": "<≤5 words>"}, ...]}\n'
+        "Choose exactly 4. Use indices from the list above. "
+        "Titles MUST be ≤5 words and ≤32 characters."
     )
     raw = _llm_chat(
         [{"role": "system", "content": sys_msg}, {"role": "user", "content": user_msg}],
@@ -243,9 +244,12 @@ def get_dynamic_plot_config(crisis_text: str) -> List[Tuple[int, str]]:
         result = []
         for p in plots[:4]:
             idx = int(p.get("index", 0))
-            title = str(p.get("title", OBS_FIELDS[idx][1]))[:60]
+            raw_title = str(p.get("title", OBS_FIELDS[idx][1])).strip()
+            # Cap titles tight enough that they fit inside one subplot column.
+            if len(raw_title) > 36:
+                raw_title = raw_title[:33].rstrip() + "…"
             if 0 <= idx < len(OBS_FIELDS):
-                result.append((idx, title))
+                result.append((idx, raw_title))
         return result if len(result) == 4 else fallback
     except Exception:
         return fallback
@@ -625,16 +629,18 @@ class VIDYADemo:
                              zerolinecolor='rgba(255,255,255,0.15)',
                              tickfont=dict(color='#93a3bd'))
         fig.update_layout(
-            height=560, showlegend=False, autosize=True,
+            height=580, showlegend=False, autosize=True,
             template='plotly_dark',
             paper_bgcolor='#0a0e1a',
             plot_bgcolor='#0f1729',
             font=dict(color='#e6edf7', family='Inter'),
-            margin=dict(t=80, l=60, r=40, b=50),
+            margin=dict(t=120, l=60, r=60, b=50),
         )
-        # Restyle subplot title fonts
+        # Restyle subplot title fonts and pad them downward so the Plotly
+        # toolbar doesn't overlap.
         for ann in fig.layout.annotations:
-            ann.font = dict(color='#e6edf7', size=14, family='Inter')
+            ann.font = dict(color='#e6edf7', size=13, family='Inter')
+            ann.yshift = -6
         return fig
 
     def _create_metrics_plot(self, rewards: list, obs_arr: np.ndarray) -> go.Figure:
