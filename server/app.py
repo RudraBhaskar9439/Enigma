@@ -272,6 +272,17 @@ def api_compare(body: CompareRequest):
     return {"report": report, "plot": _figure_to_json(fig)}
 
 
+@api.get("/api/config")
+def api_config():
+    """Runtime config for the React frontend (Hume creds, etc).
+    Reads from environment so Hugging Face Spaces secrets work without
+    rebuilding the static bundle."""
+    return {
+        "hume_api_key": os.environ.get("HUME_API_KEY", ""),
+        "hume_config_id": os.environ.get("HUME_CONFIG_ID", ""),
+    }
+
+
 @api.get("/info")
 def info() -> JSONResponse:
     return JSONResponse(_OPENENV_INFO)
@@ -347,13 +358,44 @@ try:
     import gradio as gr  # type: ignore
     import app as _vish_app  # noqa: E402
     _gradio_demo = _vish_app.create_spaces_demo()
-    # Mount Gradio at the root path so the Space's default URL shows the
-    # Vishwamitra UI. The explicit FastAPI routes registered above
-    # (/reset, /step, /state, /healthz, /info, /openenv) take precedence
-    # over Gradio's catch-all because FastAPI route order is preserved.
-    api = gr.mount_gradio_app(api, _gradio_demo, path="/")
+    # Gradio lives at /gradio so the React frontend can own /.
+    api = gr.mount_gradio_app(api, _gradio_demo, path="/gradio")
 except Exception as _e:  # noqa: BLE001
     print(f"[server] Gradio UI not mounted: {_e}")
+
+
+# ---------------------------------------------------------------------------
+# Static React frontend (built into frontend/dist by the Dockerfile).
+# Mounted last so explicit /api/* and OpenEnv routes still take precedence.
+# ---------------------------------------------------------------------------
+try:
+    from fastapi.staticfiles import StaticFiles
+    from fastapi.responses import FileResponse
+
+    _frontend_dist = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "frontend", "dist",
+    )
+    if os.path.isdir(_frontend_dist):
+        api.mount("/assets", StaticFiles(directory=os.path.join(_frontend_dist, "assets")), name="assets")
+
+        @api.get("/")
+        def _root():
+            return FileResponse(os.path.join(_frontend_dist, "index.html"))
+
+        @api.get("/{full_path:path}")
+        def _spa_fallback(full_path: str):
+            # Serve real files if they exist, otherwise fall back to index.html
+            candidate = os.path.join(_frontend_dist, full_path)
+            if os.path.isfile(candidate):
+                return FileResponse(candidate)
+            return FileResponse(os.path.join(_frontend_dist, "index.html"))
+
+        print(f"[server] React frontend mounted from {_frontend_dist}")
+    else:
+        print(f"[server] React dist not found at {_frontend_dist} — frontend not served")
+except Exception as _e:  # noqa: BLE001
+    print(f"[server] Static frontend not mounted: {_e}")
 
 
 def main() -> None:

@@ -7,9 +7,14 @@ ENV PYTHONUNBUFFERED=1 \
     PORT=7860
 
 # System deps needed by some Python wheels (torch, numpy, gradio, etc.)
+# + Node.js 20 for building the React frontend.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         curl \
+        ca-certificates \
+        gnupg \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 # Hugging Face Spaces require a non-root user (UID 1000) with a writable
@@ -30,8 +35,16 @@ COPY --chown=user:user requirements.txt ./
 RUN pip install --no-cache-dir --user --upgrade pip && \
     pip install --no-cache-dir --user -r requirements.txt
 
+# Build the React frontend (no env vars needed — Hume creds are fetched
+# at runtime from /api/config which reads HF Space secrets).
+COPY --chown=user:user frontend/package.json frontend/package-lock.json ./frontend/
+RUN cd frontend && npm ci --no-audit --no-fund
+
 # Copy the rest of the app.
 COPY --chown=user:user . .
+
+# Build the static React bundle into frontend/dist
+RUN cd frontend && npm run build
 
 # HF Spaces injects $PORT (default 7860). server:api is the FastAPI app
 # defined in server.py — exposes /reset, /step, /state and mounts the

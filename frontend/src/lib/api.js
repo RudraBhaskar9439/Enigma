@@ -1,4 +1,5 @@
-const BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:7860'
+// Empty BASE = same-origin (HF Spaces deployment). Override locally with VITE_BACKEND_URL.
+const BASE = import.meta.env.VITE_BACKEND_URL ?? ''
 
 async function post(path, body) {
   const res = await fetch(`${BASE}${path}`, {

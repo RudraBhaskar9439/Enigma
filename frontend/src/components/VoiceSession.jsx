@@ -1,9 +1,23 @@
 import { useEffect, useRef, useState } from 'react'
 
-const HUME_API_KEY = import.meta.env.VITE_HUME_API_KEY
-const HUME_CONFIG_ID = import.meta.env.VITE_HUME_CONFIG_ID
-
 export default function VoiceSession({ onBack }) {
+  const [creds, setCreds] = useState({
+    key: import.meta.env.VITE_HUME_API_KEY || '',
+    config: import.meta.env.VITE_HUME_CONFIG_ID || '',
+  })
+
+  useEffect(() => {
+    // Try fetching runtime config (HF Spaces deployment).
+    fetch('/api/config')
+      .then(r => r.ok ? r.json() : null)
+      .then(j => {
+        if (j && j.hume_api_key) setCreds({ key: j.hume_api_key, config: j.hume_config_id })
+      })
+      .catch(() => {})
+  }, [])
+
+  const HUME_API_KEY = creds.key
+  const HUME_CONFIG_ID = creds.config
   const configured = HUME_API_KEY && HUME_API_KEY !== 'your_hume_api_key_here'
 
   const [status, setStatus] = useState('idle') // idle | connecting | connected | speaking | error
