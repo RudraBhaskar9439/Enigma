@@ -120,10 +120,13 @@ FEEDBACK_PATH = os.environ.get(
 
 
 def _llm_client():
-    """Return an OpenAI-compatible client if env vars are set, else None."""
+    """Return an OpenAI-compatible client if env vars are set, else None.
+    Reads API_KEY first (the hackathon proxy's variable name), falls back
+    to HF_TOKEN for local development.
+    """
     base = os.environ.get("API_BASE_URL", "")
     model = os.environ.get("MODEL_NAME", "")
-    token = os.environ.get("HF_TOKEN", "")
+    token = os.environ.get("API_KEY") or os.environ.get("HF_TOKEN", "")
     if not (base and model and token):
         return None, None
     try:

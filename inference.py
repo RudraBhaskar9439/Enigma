@@ -34,12 +34,21 @@ except Exception:
     pass
 
 # ---------------------------------------------------------------------------
-# OpenEnv-required environment variables (per the hackathon sample inference)
-# Defaults are set ONLY for API_BASE_URL and MODEL_NAME, never for HF_TOKEN.
+# OpenEnv-required environment variables.
+#
+# The hackathon's LiteLLM proxy injects API_BASE_URL + API_KEY (+ MODEL_NAME)
+# into the evaluation container. Phase 2 verifies that real API calls flow
+# through that proxy, so we MUST read API_KEY (not just HF_TOKEN).
+#
+# Local development can still use a .env with HF_TOKEN as a fallback so the
+# script works against Groq / Fireworks / etc. without renaming variables.
+#
+# Defaults are set ONLY for API_BASE_URL and MODEL_NAME, never for the key.
 # ---------------------------------------------------------------------------
 API_BASE_URL = os.getenv("API_BASE_URL", "<your-active-endpoint>")
 MODEL_NAME = os.getenv("MODEL_NAME", "<your-active-model>")
-HF_TOKEN = os.getenv("HF_TOKEN")
+API_KEY = os.getenv("API_KEY")
+HF_TOKEN = os.getenv("HF_TOKEN")  # legacy fallback for local dev
 
 # Optional — only relevant when using from_docker_image()
 LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
@@ -182,7 +191,9 @@ class LLMPolicy:
         # Read from the module-level constants so the spec defaults are honoured.
         self.base_url = API_BASE_URL
         self.model = MODEL_NAME
-        self.token = HF_TOKEN
+        # Phase 2: prefer API_KEY (the hackathon's LiteLLM proxy injects this).
+        # Local dev: fall back to HF_TOKEN if API_KEY is not set.
+        self.token = API_KEY or HF_TOKEN
         self.client = None
         # Treat placeholder-default values as "unset" so the script falls back
         # to the heuristic policy instead of trying to call a fake endpoint.
