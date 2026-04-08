@@ -26,6 +26,13 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 
+# Auto-load .env if present (no-op when python-dotenv isn't installed).
+try:
+    from dotenv import load_dotenv  # type: ignore
+    load_dotenv()
+except Exception:
+    pass
+
 from env.dropout_env import DropoutCommonsEnv
 from env.scenarios.funding_cut import FundingCutScenario
 from env.scenarios.teacher_shortage import TeacherShortageScenario
