@@ -13,7 +13,8 @@ __pycache__/
 *.egg-info/
 
 # Large training artifacts — not needed at runtime
-checkpoints/
+checkpoints/*
+!checkpoints/meta_policy.pt
 logs/
 runs/
 tensorboard/
@@ -21,7 +22,6 @@ tensorboard/
 *.npz
 *.zip
 *.pkl
-*.pt
 *.pth
 
 # Local DBs / scratch
