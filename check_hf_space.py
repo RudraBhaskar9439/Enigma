@@ -108,33 +108,55 @@ class Suite:
             self._record("GET /healthz", False, f"HTTP {r.status_code}")
 
     def check_openenv_info(self) -> None:
-        # Most OpenEnv servers expose / and /openenv with the manifest
-        for path in ("/", "/openenv"):
-            r, ms = self._request("GET", path)
-            if r is None:
-                self._record(f"GET {path}", False, "network error")
-                continue
-            if r.status_code != 200:
-                self._record(f"GET {path}", False, f"HTTP {r.status_code}")
-                continue
-            try:
-                data = r.json()
-            except Exception:
-                self._record(f"GET {path}", False, "response is not JSON")
-                continue
-
-            required = {"name", "observation_space", "action_space"}
-            missing = required - set(data.keys())
-            if missing:
-                self._record(f"GET {path}", False, f"missing keys: {sorted(missing)}", ms)
+        # GET / typically serves the Gradio UI (HTML) on HF Spaces — that's fine.
+        # The OpenEnv manifest is canonically at /openenv.
+        r, ms = self._request("GET", "/")
+        if r is None:
+            self._record("GET /", False, "network error")
+        elif r.status_code != 200:
+            self._record("GET /", False, f"HTTP {r.status_code}")
+        else:
+            ctype = r.headers.get("content-type", "")
+            if "html" in ctype.lower():
+                self._record("GET /", True, "serving Gradio UI (HTML) — OK", ms)
             else:
-                obs_shape = (data.get("observation_space") or {}).get("shape")
-                act_shape = (data.get("action_space") or {}).get("shape")
-                self._record(
-                    f"GET {path}", True,
-                    f"name={data.get('name')!r}  obs={obs_shape}  act={act_shape}",
-                    ms,
-                )
+                # Try JSON path
+                try:
+                    data = r.json()
+                    required = {"name", "observation_space", "action_space"}
+                    missing = required - set(data.keys())
+                    if missing:
+                        self._record("GET /", False, f"missing keys: {sorted(missing)}", ms)
+                    else:
+                        self._record("GET /", True, f"JSON manifest at root", ms)
+                except Exception:
+                    self._record("GET /", False, "not HTML, not JSON", ms)
+
+        # /openenv MUST be the JSON manifest (the OpenEnv-compliant endpoint)
+        r, ms = self._request("GET", "/openenv")
+        if r is None:
+            self._record("GET /openenv", False, "network error")
+            return
+        if r.status_code != 200:
+            self._record("GET /openenv", False, f"HTTP {r.status_code}")
+            return
+        try:
+            data = r.json()
+        except Exception:
+            self._record("GET /openenv", False, "response is not JSON")
+            return
+        required = {"name", "observation_space", "action_space"}
+        missing = required - set(data.keys())
+        if missing:
+            self._record("GET /openenv", False, f"missing keys: {sorted(missing)}", ms)
+        else:
+            obs_shape = (data.get("observation_space") or {}).get("shape")
+            act_shape = (data.get("action_space") or {}).get("shape")
+            self._record(
+                "GET /openenv", True,
+                f"name={data.get('name')!r}  obs={obs_shape}  act={act_shape}",
+                ms,
+            )
 
     def check_reset(self) -> dict | None:
         r, ms = self._request(
