@@ -96,18 +96,41 @@ class PolicyReportRequest(BaseModel):
     scenario: str = Field("", description="Operator scenario brief, verbatim.")
 
 
+class Stakeholder(BaseModel):
+    name: str = ""
+    role: str = ""
+
+
 class PolicyReportResponse(BaseModel):
     title: str = ""
-    authors: str = "Vishwamitra Swarm Deliberation System"
-    affiliation: str = "Multi-Agent Policy Analytics Lab, Educational Commons Research Unit"
-    abstract: str = ""
-    keywords: str = ""
-    introduction: str = ""
-    methodology: str = ""
-    results: str = ""
-    future_projections: str = ""
-    discussion: str = ""
-    conclusion: str = ""
+    what_is: str = ""
+
+    stage_1_description: str = ""
+    stage_1_bullets: list[str] = Field(default_factory=list)
+
+    stage_2_description: str = ""
+    stage_2_bullets: list[str] = Field(default_factory=list)
+    stage_2_influencers: str = ""
+
+    stage_3_description: str = ""
+    stage_3_bullets: list[str] = Field(default_factory=list)
+    stage_3_contributors: str = ""
+
+    stage_4_description: str = ""
+    stage_4_bullets: list[str] = Field(default_factory=list)
+
+    stage_5_description: str = ""
+    stage_5_bullets: list[str] = Field(default_factory=list)
+    stage_5_challenges: str = ""
+
+    stage_6_description: str = ""
+    stage_6_bullets: list[str] = Field(default_factory=list)
+
+    iterative_nature: list[str] = Field(default_factory=list)
+    stakeholders: list[Stakeholder] = Field(default_factory=list)
+    challenges: list[str] = Field(default_factory=list)
+    strategies: list[str] = Field(default_factory=list)
+    takeaway: str = ""
 
 
 @router.post("/policy-report", response_model=PolicyReportResponse)

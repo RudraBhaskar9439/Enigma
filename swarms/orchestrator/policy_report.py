@@ -1,19 +1,40 @@
 """
-LLM-powered IEEE-style policy report generator.
+LLM-powered Educational Policymaking Brief generator.
 
 Takes a ResonanceReport (the structured swarm deliberation output) and asks
-the LLM to produce a peer-review-quality short paper as a single JSON object.
-The strict prompt enforces:
+the LLM to produce a policy-brief document organized around the six
+canonical stages of the educational policymaking process. Output is a
+single JSON object that the frontend renders into a polished PDF.
 
-  - Academic third-person voice
-  - Specific persona citations and numerical grounding
-  - A forward-projection section (what happens if the recommendations ship)
-  - A real discussion of methodological limits
-  - A banned-phrase list to remove the most common LLM tells
+The point of this template is NOT to teach generic policymaking — it is to
+narrate THIS deliberation through the policymaking-process frame, citing
+specific persona reasoning, specific numerical evidence, and the actual
+dissonance the deliberation surfaced.
 
-Output JSON keys:
-  title, authors, affiliation, abstract, keywords,
-  introduction, methodology, results, future_projections, discussion, conclusion
+JSON schema (flat for easy validation):
+
+  title                          str
+  what_is                        str
+  stage_1_description            str
+  stage_1_bullets                list[str]
+  stage_2_description            str
+  stage_2_bullets                list[str]
+  stage_2_influencers            str
+  stage_3_description            str
+  stage_3_bullets                list[str]
+  stage_3_contributors           str
+  stage_4_description            str
+  stage_4_bullets                list[str]
+  stage_5_description            str
+  stage_5_bullets                list[str]
+  stage_5_challenges             str
+  stage_6_description            str
+  stage_6_bullets                list[str]
+  iterative_nature               list[str]
+  stakeholders                   list[ {"name": str, "role": str} ]
+  challenges                     list[str]
+  strategies                     list[str]
+  takeaway                       str
 """
 from __future__ import annotations
 from typing import Any
@@ -22,100 +43,136 @@ from swarms.core.llm_client import LLMClient
 from swarms.core.verdict import ACTION_NAMES
 
 
-SYSTEM_PROMPT = """You are an academic policy analyst writing a short peer-review-quality
-paper for an IEEE-style policy analytics venue. The data you are given comes from
-a multi-agent LLM deliberation system that simulated four stakeholder swarms
-(Student, Teacher, Administrator, Policymaker), each composed of three
-heterogeneous personas, and aggregated their verdicts under a confidence-weighted
-mean. A cross-swarm Resonance metric (defined as one minus the normalised
-standard deviation across the four role-swarm aggregated action vectors) is used
-to surface dimensions of disagreement.
+SYSTEM_PROMPT = """You are producing an Educational Policy Brief that documents
+a real deliberation just performed by the Vishwamitra swarm-of-swarms system.
+The brief is organized around the six canonical stages of the educational
+policymaking process. EVERY section must be grounded in the specific scenario
+and the specific persona verdicts you are given — not generic policymaking 101
+boilerplate.
 
-Your task is to produce a complete short paper as a SINGLE valid JSON object —
-no prose around it, no code fences, no preamble. The JSON must have exactly
-these top-level keys, each a multi-paragraph plain-text string:
+Output a SINGLE valid JSON object — no prose around it, no code fences. The
+object must have exactly these keys:
 
-  title              Declarative title, no marketing phrasing, no colon unless
-                     it adds genuine information. Maximum 14 words.
-  authors            Use exactly: "Vishwamitra Swarm Deliberation System"
-  affiliation        Use exactly: "Multi-Agent Policy Analytics Lab,
-                     Educational Commons Research Unit"
-  abstract           140-180 words, single paragraph. Problem -> method ->
-                     principal finding -> implication. Concrete numbers welcome.
-  keywords           5 to 8 comma-separated index terms, lowercase except
-                     proper nouns.
-  introduction       Three to four paragraphs. Frame the policy problem
-                     described in the scenario, the stakes, prior tensions
-                     that the deliberation surfaces, and what this paper
-                     sets out to determine. Do not summarise the swarm method
-                     here -- save that for the methodology section.
-  methodology        Two to three paragraphs. Describe the swarm-of-swarms
-                     architecture in academic prose: four role-specific
-                     swarms, three heterogeneous personas per swarm,
-                     persona-conditioned reasoning, confidence-weighted
-                     within-swarm aggregation, and the across-swarm Resonance
-                     metric. Treat it as a methodology section in a real
-                     paper -- describe what was done, not why it is exciting.
-  results            Four to five paragraphs. Report the findings using
-                     specific numerical evidence: which interventions
-                     emerged at high recommended intensity, which Resonance
-                     scores indicate consensus versus dissent, and where
-                     personas materially diverged. When explaining variance,
-                     cite specific personas BY NAME in the form
-                     "Maya (first-generation aspirant)" or "Rep. Kumar
-                     (union representative)" along with their numerical
-                     stance, e.g., "weighted scholarships at 0.78 against
-                     Priya's 0.32".
-  future_projections Four to five paragraphs forecasting forward. For each
-                     intervention recommended at intensity above 0.6,
-                     project the likely 6-, 12-, and 24-month system
-                     trajectory. Address what plausibly happens if the
-                     dissonance-flagged interventions are deployed without
-                     resolving the underlying disagreement among
-                     stakeholders. Be concrete about second-order effects
-                     (teacher attrition cascades, peer-effect dropouts,
-                     budget recovery curves). Avoid hedging language.
-  discussion         Two to three paragraphs on methodological limits.
-                     The personas are LLM-instantiated and may share
-                     training-data biases. Confidence values are
-                     self-reported. The system cannot validate its own
-                     forecasts against ground truth. Identify whose voices
-                     this swarm composition likely under-represents.
-  conclusion         Two paragraphs. Summarise the recommendation, the
-                     conditions under which it holds, and the named
-                     decisions that still require human deliberation.
+  title                  Document title in the form
+                         "Educational Policy Brief: <Specific Crisis>"
+                         e.g., "Educational Policy Brief: Mid-Year Funding Cut Response"
+                         Maximum 14 words. No marketing phrasing.
+
+  what_is                One paragraph (4-6 sentences) defining educational policy
+                         in the context of THIS deliberation. Mention the specific
+                         crisis the swarms deliberated on. Concrete, not generic.
+
+  stage_1_description    2-3 sentences introducing the specific problem the
+                         swarms identified. Cite at least two state-vector numbers.
+  stage_1_bullets        4-5 single-sentence bullets, each a concrete observation
+                         from the deliberation (e.g., dropout rate, burnout level,
+                         budget pressure). Reference numbers when possible.
+
+  stage_2_description    2-3 sentences on how this issue rises on the agenda.
+                         Cite which personas pushed prioritisation and why.
+  stage_2_bullets        4-5 single-sentence bullets describing agenda-setting
+                         dynamics in this case. Reference specific personas
+                         where their voice was decisive.
+  stage_2_influencers    One sentence listing who influenced the agenda for this
+                         specific case (e.g., "MLA Khan flagged election-cycle
+                         risk; Banerjee pushed equity framing; teacher exit
+                         interviews escalated media attention").
+
+  stage_3_description    2-3 sentences on how the swarms formulated and weighed
+                         the eight intervention options.
+  stage_3_bullets        5-6 bullets, each describing ONE specific intervention
+                         considered. Include the recommended intensity number
+                         and one persona-grounded rationale.
+                         Example bullet: "Counseling programs (intensity 0.65)
+                         drew strong support from Iyer (year-2 idealist teacher)
+                         who cited a 220 percent rise in mental-health referrals."
+  stage_3_contributors   One sentence naming the four swarms and 1-2 personas
+                         who shaped formulation most decisively.
+
+  stage_4_description    2-3 sentences on adoption — the deliberation's final
+                         action vector represents what is "adopted". Treat
+                         dissonance flags as adoption-stage points of contention.
+  stage_4_bullets        4-5 bullets summarising the highest-intensity
+                         recommendations and any flagged dissonance points,
+                         each paired with the politics or persona tension that
+                         would surface if adopted in real bargaining.
+
+  stage_5_description    2-3 sentences on implementation challenges specific
+                         to this set of recommendations.
+  stage_5_bullets        4-5 bullets describing concrete implementation
+                         considerations — capacity, timeline, sequencing,
+                         personnel — drawn from persona reasoning.
+  stage_5_challenges     One sentence summarising the primary implementation
+                         risks.
+
+  stage_6_description    2-3 sentences on how outcomes from these interventions
+                         should be measured.
+  stage_6_bullets        3-4 bullets, each naming a specific state-vector
+                         metric (e.g., enrollment_rate, dropout_rate,
+                         teacher_retention) and a target movement direction
+                         and rough timeline.
+
+  iterative_nature       3-4 bullets about which findings should feed back
+                         into the next deliberation cycle and what evidence
+                         would trigger re-evaluation.
+
+  stakeholders           A list of 6-7 objects with exactly these keys:
+                           { "name": str, "role": str }
+                         The first four MUST correspond to the four swarms in
+                         the deliberation: Student Body, Teaching Staff,
+                         School Administration, Policymakers. Their "role"
+                         field must summarise what THAT swarm contributed
+                         IN THIS deliberation (cite at least one persona name
+                         per role). Add 2-3 more relevant stakeholders for
+                         the specific scenario.
+
+  challenges             4-5 bullets describing scenario-specific challenges.
+                         At least one bullet for each dissonance flag in
+                         the deliberation, naming the flagged intervention
+                         and the underlying tension.
+
+  strategies             4-5 bullets of concrete implementation strategies
+                         drawn from the swarm recommendations. Each is one
+                         to two sentences and actionable.
+
+  takeaway               Two paragraphs. The first synthesises the
+                         recommendation. The second names which decisions
+                         still require human deliberation rather than
+                         algorithmic resolution, and the conditions under
+                         which the recommendation holds.
 
 STYLE REQUIREMENTS (strict):
+  - Voice: third-person, declarative, evidence-grounded.
+  - Cite specific persona first names with their bracketed role descriptor:
+    "Maya (first-generation aspirant)", "Mr. Sharma (22-year veteran teacher)",
+    "Verma (fiscal hawk policymaker)".
+  - Cite specific numerical values from the deliberation report whenever
+    they support a claim. Avoid "high agreement" without a number.
+  - Bullets are full sentences, 1-2 sentences each, NOT fragments.
+  - Sentence length must vary. Paragraphs are 3-6 sentences.
+  - DO NOT use any of these phrases: "delve into", "delves into", "delving",
+    "navigate the complexities", "navigating the complex landscape",
+    "tapestry", "in this ever-evolving", "let us", "dear reader",
+    "stand at the precipice", "in conclusion", "at the end of the day",
+    "transformative capacity", "leverage" (as a verb), "groundbreaking",
+    "robust framework", "harness the power of", "deep dive", "in today's
+    world", "intricacies", "comprehensive understanding",
+    "ever-changing landscape", "paradigm shift", "synergy", "revolutionary".
+  - Avoid the phrase "the swarm" in isolation — use "the deliberation",
+    "the role swarms", or specific swarm names ("the Teacher swarm").
+  - Do not editorialise the methodology as innovative or transformative;
+    treat it as one input to a real policymaking process.
+  - Do not begin sections with "This section" or end with "In summary".
+  - Do not address the reader. Do not use rhetorical questions.
 
-- Third-person academic voice. Past tense for what the deliberation produced;
-  present tense for what the data shows; future tense only in the projections
-  section.
-- Cite specific persona first names with their bracketed role tag whenever
-  their reasoning matters to the argument.
-- Cite specific numerical values from the deliberation report. Avoid generic
-  phrasing like "high agreement" without the number.
-- Sentence length must vary. Paragraphs are three to six sentences.
-- No bullet lists. No internal subheadings. No "This section ...".
-- DO NOT use any of these phrases: "delve into", "delves into", "navigate
-  the complexities", "tapestry", "in this ever-evolving", "let us", "dear
-  reader", "stand at the precipice", "in conclusion", "at the end of the
-  day", "it is important to note that", "it goes without saying", "in
-  today's world", "ever-changing landscape", "robust framework",
-  "groundbreaking", "revolutionary", "cutting-edge", "leverage" (as a verb),
-  "harness the power of", "unlock", "deep dive", "synergy", "paradigm shift".
-- Do not editorialise the methodology as transformative or revolutionary.
-  Treat it as a tool with documented limits.
-- Do not begin sections with "In this section". Do not end with "In summary".
-- Do not address the reader. Do not use rhetorical questions.
-
-Output a single JSON object, nothing else.
+Output a single JSON object. Nothing else.
 """
 
 
 def _format_data_brief(report: dict[str, Any], state: dict[str, Any], scenario: str) -> str:
     """Compact data dossier handed to the LLM."""
     lines: list[str] = []
-    lines.append(f"SCENARIO BRIEF (verbatim from operator):\n{scenario}\n")
+    lines.append(f"OPERATOR SCENARIO BRIEF (verbatim):\n{scenario}\n")
 
     lines.append("OBSERVED SYSTEM STATE AT TIME OF DELIBERATION:")
     for k, v in (state or {}).items():
@@ -161,26 +218,62 @@ def _format_data_brief(report: dict[str, Any], state: dict[str, Any], scenario: 
     return "\n".join(lines)
 
 
-_REQUIRED_KEYS = (
-    "title", "authors", "affiliation", "abstract", "keywords",
-    "introduction", "methodology", "results", "future_projections",
-    "discussion", "conclusion",
+_STR_KEYS = (
+    "title", "what_is",
+    "stage_1_description",
+    "stage_2_description", "stage_2_influencers",
+    "stage_3_description", "stage_3_contributors",
+    "stage_4_description",
+    "stage_5_description", "stage_5_challenges",
+    "stage_6_description",
+    "takeaway",
+)
+
+_LIST_OF_STR_KEYS = (
+    "stage_1_bullets",
+    "stage_2_bullets",
+    "stage_3_bullets",
+    "stage_4_bullets",
+    "stage_5_bullets",
+    "stage_6_bullets",
+    "iterative_nature",
+    "challenges",
+    "strategies",
 )
 
 
-def _ensure_keys(payload: dict[str, Any]) -> dict[str, str]:
-    """Guarantee every required key exists as a string."""
-    out: dict[str, str] = {}
-    for k in _REQUIRED_KEYS:
+def _coerce_str_list(v: Any) -> list[str]:
+    if isinstance(v, list):
+        return [str(x).strip() for x in v if str(x).strip()]
+    if isinstance(v, str):
+        # Some models return bullets as a single newline-joined string.
+        parts = [p.strip(" -•\t").strip() for p in v.splitlines() if p.strip()]
+        return [p for p in parts if p]
+    return []
+
+
+def _coerce_stakeholders(v: Any) -> list[dict[str, str]]:
+    if not isinstance(v, list):
+        return []
+    out: list[dict[str, str]] = []
+    for item in v:
+        if isinstance(item, dict):
+            name = str(item.get("name") or item.get("stakeholder") or "").strip()
+            role = str(item.get("role") or item.get("contribution") or "").strip()
+            if name or role:
+                out.append({"name": name, "role": role})
+    return out
+
+
+def _ensure_keys(payload: dict[str, Any]) -> dict[str, Any]:
+    """Normalize the LLM's output into our flat schema with safe defaults."""
+    out: dict[str, Any] = {}
+    for k in _STR_KEYS:
         v = payload.get(k, "")
         out[k] = v if isinstance(v, str) else str(v)
-    # Nudge fixed-author/affiliation if model deviated.
-    if not out["authors"].strip():
-        out["authors"] = "Vishwamitra Swarm Deliberation System"
-    if not out["affiliation"].strip():
-        out["affiliation"] = (
-            "Multi-Agent Policy Analytics Lab, Educational Commons Research Unit"
-        )
+    for k in _LIST_OF_STR_KEYS:
+        out[k] = _coerce_str_list(payload.get(k))
+    out["stakeholders"] = _coerce_stakeholders(payload.get("stakeholders"))
     return out
 
 
@@ -190,24 +283,22 @@ async def generate_policy_report(
     state: dict[str, Any],
     scenario: str,
     client: LLMClient | None = None,
-) -> dict[str, str]:
-    """Run a single LLM call to produce an IEEE-style structured paper."""
+) -> dict[str, Any]:
+    """One LLM call → structured Educational Policy Brief JSON."""
     client = client or LLMClient()
-
     user_prompt = (
         "DELIBERATION DATA TO ANALYSE\n"
         "============================\n\n"
         + _format_data_brief(report, state, scenario)
-        + "\n\nProduce the IEEE-style short paper now as a single JSON object "
-        "with the keys specified in the system instructions. Do not output "
-        "anything else."
+        + "\n\nProduce the Educational Policy Brief now as a single JSON "
+        "object with the keys specified in the system instructions. Do "
+        "not output anything else."
     )
-
     payload = await client.chat_json(
         system=SYSTEM_PROMPT,
         user=user_prompt,
         temperature=0.55,
-        max_tokens=4500,
+        max_tokens=5500,
         use_cache=True,
     )
     return _ensure_keys(payload)

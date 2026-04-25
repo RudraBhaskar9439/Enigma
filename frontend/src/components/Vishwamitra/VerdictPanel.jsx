@@ -150,8 +150,8 @@ export default function VerdictPanel({ report, state, scenario, info }) {
           disabled={exporting}
         >
           {exporting
-            ? '◐ Synthesising IEEE Report…'
-            : '⬇ Generate IEEE Policy Paper (PDF)'}
+            ? '◐ Synthesising Policy Brief…'
+            : '⬇ Generate Educational Policy Brief (PDF)'}
         </button>
         {exportErr ? (
           <div className="vm-export-sub" style={{ color: 'var(--vm-red)' }}>
