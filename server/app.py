@@ -404,8 +404,21 @@ try:
         def _root():
             return FileResponse(os.path.join(_frontend_dist, "index.html"))
 
+        # API namespaces the SPA fallback must NEVER swallow.
+        # On HF Spaces' proxy, the path converter sometimes wins over more
+        # specific include_router routes — explicit exclusion is the safe fix.
+        _API_PREFIXES = (
+            "swarms/", "api/",
+            "openenv", "healthz", "reset", "step", "state", "info",
+        )
+
         @api.get("/{full_path:path}")
         def _spa_fallback(full_path: str):
+            # Don't shadow the API surface. Returning 404 lets FastAPI
+            # match the more specific API routes registered earlier.
+            from fastapi import HTTPException
+            if full_path.startswith(_API_PREFIXES) or full_path in _API_PREFIXES:
+                raise HTTPException(status_code=404, detail=f"No route for /{full_path}")
             # Serve real files if they exist, otherwise fall back to index.html
             candidate = os.path.join(_frontend_dist, full_path)
             if os.path.isfile(candidate):
