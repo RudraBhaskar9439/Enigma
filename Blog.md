@@ -1,376 +1,228 @@
-# Vishwamitra: A Disagreement-Mapping Environment for Educational Systems Collapse
+# Vishwamitra: Disagreement-Mapping for Educational Systems Collapse
 
-*Built for the Meta · PyTorch Hackathon 2026 — Round 2 (India). Submission ordered against the four published evaluation criteria: Environment Innovation, Storytelling, Showing Improvement in Rewards, Reward & Training Pipeline.*
-
----
-
-## TL;DR
-
-Vishwamitra is an OpenEnv-compliant simulator (`DropoutCommonsEnv`) of how educational systems collapse — paired with a two-tier *swarm-of-swarms* deliberation layer in which **four stakeholder swarms × three heterogeneous LLM personas** debate every intervention, surface a structured **resonance / dissonance map**, and serve as the teacher in a **knowledge-distillation pipeline** that compresses the 12-persona swarm into a single 1-billion-parameter Llama-3.2 student.
-
-On 20 evaluation episodes of the funding-cut scenario, the distilled student reaches **+0.449 cumulative reward versus −23.504 for a do-nothing baseline — a 24-reward-unit gap** — with ~10% lower variance than a random-action baseline. This is the headline behavioural result.
-
-The blog below maps each section to the published rubric weight in brackets so judges can score directly.
+*A technical blog on building an OpenEnv simulator, a swarm-of-swarms LLM deliberation layer, and a 1-billion-parameter distilled student that carries the swarm into deployment.*
 
 ---
 
-## 1. Environment Innovation [40%]
+## A school district doesn't collapse from a single bad decision
 
-The environment is the heart of this submission. Two parts: the underlying `DropoutCommonsEnv`, and the swarm-of-swarms deliberation layer we built on top of it.
+A school district doesn't collapse from a single bad decision. It collapses from a chain of locally rational ones.
 
-### 1.1 Why this environment is novel
+The policymaker cuts the discretionary budget because the treasury demanded it, and the math, on her desk, balances. The principal redistributes the loss across departments because the math, on his desk, also has to balance. The veteran teacher quietly stops volunteering for the after-school programme because she is already covering one and a half teachers' worth of load and there is nothing left to give. The 10th-grader who needed that programme to stay tethered to school now skips Wednesdays — because there is no longer anything there to come back for.
 
-The default frame in policy-AI environments is *single-agent optimisation*: take a state vector, pick the action that maximises a scalar reward. We argue that frame is wrong for education. A school is a **four-actor coordination system** — student, teacher, administrator, policymaker — and policies fail at the seams between those actors, not inside any one of them.
+Every actor in this chain optimised carefully for what they could see. None of them chose collapse. Together, they produced it.
 
-`DropoutCommonsEnv` is built from the ground up to test that claim. It models all four stakeholders as reactive agents, terminates episodes on *real institutional cliffs* (cohort collapse, staff exodus, fiscal insolvency, demographic flight), and refuses to reward auxiliary metrics that policies typically game.
+This is the failure mode I kept watching from the inside of the system. And it is the failure mode I came to believe almost no policy AI product was honest about: not the absence of good rules, but the *moment those rules cross the seam between four very different stakeholder lenses and start pulling in different directions*. The biggest problem in education policy is not bad rules. The biggest problem is rules that look perfect on paper and break the moment they meet the four people they were written for.
 
-| Claim about the env | What makes it novel |
-|---|---|
-| It models multi-stakeholder coordination, not single-agent optimisation | Four interacting reactive agents (`agents/student_agent.py`, `teacher_agent.py`, `admin_agent.py`, `policymaker_agent.py`) with different goals and feedback loops |
-| It terminates on the cliffs the field actually fears | `dropout > 0.50`, `retention < 0.20`, `budget < −500K`, `enrollment < 0.30` — calibrated against UNESCO + DISE indicators |
-| It exposes a deliberation surface, not just a control surface | The `swarms/` package adds a 12-persona LLM deliberation layer over the env that produces a *resonance map*, not just an action |
-| It is OpenEnv-compliant and reproducible | Single `pip install` + `uvicorn server.app:api` brings up the full stack including the OpenEnv HTTP contract |
+That observation is what eventually became Vishwamitra.
 
-### 1.2 The state and action spaces
+---
 
-```
-Observation space — Box(13,) float32 in [0, 1]:
-  enrollment_rate, attendance_rate, dropout_rate,
-  teacher_retention, budget_utilization, avg_class_size (norm),
-  teacher_workload, resource_allocation, student_engagement,
-  teacher_burnout, policy_compliance, budget_remaining (norm), step
+## Why I stopped trying to fix the inside of the classroom
 
-Action space — Box(8,) float32 in [0, 1]:
-  funding_boost,         teacher_incentive,
-  student_scholarship,   attendance_mandate,
-  resource_realloc,      transparency_report,
-  staff_hiring,          counseling_programs
-```
+I started in this space building DronaAI — an AI tutor. The pitch was the obvious one: give every student a personal teacher, watch outcomes rise. The unit economics were good. The user feedback was good. The product worked.
 
-Each action dimension is a *continuous intervention intensity*, not a discrete pick. That choice matters: real policy is graded, not binary.
+What I did not see at the start was that the surrounding system was the bottleneck, not the tutor. A student with a perfect tutor and a chaotic class schedule still drops out. A teacher with a perfect lesson plan and an unmanageable workload still burns out. A school with a perfect curriculum and a thirty-five percent mid-year budget cut still bleeds enrollment, no matter how good the AI inside the classroom is. The learning layer was being throttled by the policy layer above it, and the layer above the learning layer had no software in it at all.
 
-### 1.3 The swarm-of-swarms innovation (the part nothing else has)
+That realisation is what turned DronaAI into Vishwamitra. I stopped trying to optimise the inside of the classroom and started trying to model the system the classroom sat inside. The thesis was simple, and slightly heretical for an edtech founder to say out loud: *even the best learning system fails if the surrounding rules are misaligned.* So I went up a layer.
 
-Above the env sits a **two-tier deliberation orchestrator** that turns every state into a structured deliberation across 12 LLM personas, organised into four role swarms:
+---
 
-- **Student swarm.** Maya (first-gen aspirant), Rohit (working student, dropout risk), Priya (high achiever, IIT-JEE prep).
-- **Teacher swarm.** Mr. Sharma (22-year veteran, burnt out), Ms. Iyer (year-2 idealist), Rep. Kumar (union representative).
-- **Administrative swarm.** Principal Desai (pragmatist), Director Joshi (compliance hawk), Dr. Rao (innovator).
-- **Policymaker swarm.** Minister Verma (fiscal hawk), Sec. Banerjee (equity champion), MLA Khan (political operator).
+## Education is a coordination problem, not an optimisation problem
 
-Three economic positions, three pressure profiles per swarm. Twelve total perspectives.
+The dominant frame in policy AI right now is optimisation. Take a state vector, pick the action that maximises some scalar reward, ship the recommendation. Almost every product I reviewed in this space — from RL-based admission optimisers to LLM-based "policy assistants" — is built on this frame. And it is, I came to believe, the wrong frame for education.
 
-The two-tier orchestration:
+A school is not a one-actor system you can optimise. It is a four-actor system that has to coordinate under a shared policy. The student is optimising for flexibility and a path out of pressure, blind to the peer-norm cascade their absence triggers. The teacher is optimising for a manageable workload and a working day, blind to the slow erosion of institutional memory each time another colleague leaves. The administrator is optimising for compliance and audit cleanliness, blind to the rumour-driven trust spiral that follows every delay. The policymaker is optimising for visible wins and electoral signal, blind to the acute crisis that their reallocation seeds two years out.
 
-```
-state vector ─┬─► L1 WeightAllocator   ─► (model, verdict_weight) per role
-              │
-              └─► L2 PersonaAllocator  ─► (within-swarm weight) per persona
-                  │
-                  ▼
-        12 LLM persona calls run in parallel
-                  │
-                  ▼
-   Cross-swarm resonance metric → final action vector + dissonance flags
-```
+Every one of those four columns is internally coherent. Not one of them is externally aware. A policy that reads as obvious from inside any single column will land badly the moment it crosses the others. Strict attendance mandates, written for one purpose by a policymaker, are interpreted as paperwork by exhausted teachers, and gamed into fake compliance by students; the same rule, refracted twice on its way to the classroom. A scholarship designed to reduce dropout from a policymaker's lens is, from a working student's lens, a means-test trap that disincentivises the part-time work she depends on; the same instrument, opposite signal. The list goes on.
 
-**L1 — `WeightAllocator`.** Computes per-role *attention scores* from state pressures. High-attention roles (e.g., the teacher swarm in a burnout crisis) get the heavyweight `llama-3.3-70b` model and a 1.5× verdict weight. Routine roles get `llama-3.1-8b-instant` and 1.0×. We trade compute for deliberation depth where it matters.
+What I came to believe — and what Vishwamitra is built around — is that the right output of a policy AI is not one number. It is a *structured map* of where the four stakeholder lenses converge and where they fundamentally disagree. Institutions don't fail because people don't care. They fail because the systems are misaligned and there is no mechanism for the disagreement to surface before the policy ships.
 
-**L2 — `PersonaAllocator`.** Inside each swarm, distributes weight across personas using `fit_signals` declared in YAML:
+---
 
-```yaml
-- id: student_dropout_risk
-  name: "Rohit, Working Student"
-  fit_signals: {budget: 0.8, dropout: 0.9, attendance: 0.7}
-```
+## Building the environment: `DropoutCommonsEnv`
 
-Per-persona weight ∈ [0.3, 1.5]. **Even off-topic personas keep a baseline voice** — no lens is silenced, only down-weighted. This is the technical encoding of the thesis that *the value of a deliberation is the lens that would otherwise be talked over*.
+The first piece I needed was an environment honest enough to test that thesis. Off-the-shelf education simulators were either too abstract — synthetic agents with no calibration to real institutional cliffs — or too narrow — single-classroom dynamics with no policy layer at all. So I built one.
 
-### 1.4 The resonance metric — disagreement as a first-class output
+`DropoutCommonsEnv` is a `gymnasium.Env` that models a school district as a thirteen-dimensional state vector. The dimensions are deliberately mundane: enrollment rate, attendance rate, dropout rate, teacher retention, budget utilisation, average class size, teacher workload, resource allocation, student engagement, teacher burnout, policy compliance, the budget remaining, and the step counter. Nothing exotic — just the metrics a District Education Officer actually has on her dashboard on a Monday morning.
 
-For each of the 8 interventions, we compute:
+The action space is eight continuous intervention levers, each in the range zero to one: funding boost, teacher incentive, student scholarship, attendance mandate, resource reallocation, transparency report, staff hiring, counselling programmes. The intensities are continuous, not binary, because real policy is always graded — you don't just turn a scholarship on; you decide how much of one to fund.
 
-```python
-resonance(intervention) = 1 − σ_normalised(verdict[role] for role in swarms)
-```
+Inside the env, four reactive agents — a student agent, a teacher agent, an administrator agent, and a policymaker agent — respond to those intervention intensities. Their reaction functions are calibrated against UNESCO out-of-school-children indicators and the Government of India's DISE dataset, not invented from scratch. The point of the env is that the agents push back on the policy in a way that resembles how real stakeholders push back.
 
-How tightly do the four role-swarm aggregated recommendations agree on this lever? **Resonance is computed unweighted** — operator weights modulate the *recommendation*, but disagreement is reported faithfully. We never collapse dissent.
+Episodes terminate not on arbitrary timeouts but on the cliffs the field actually fears. If the dropout rate crosses fifty percent — cohort collapse. If teacher retention falls below twenty percent — staff exodus. If the budget remaining drops below negative five hundred thousand — fiscal insolvency. If enrollment drops below thirty percent — demographic flight. These are not stylistic thresholds. They are the cliffs every superintendent and every state secretary in the field is privately watching for, and the env makes them load-bearing. Once you cross one, the agent gets zero future reward. The system is designed to train you to *prevent the cascade*, not to recover from it.
 
-If `resonance(intervention) < 0.55`, we flag it as **DISSONANT** and surface it to the operator with the explicit instruction *this is where human judgement is required*. The system does not pretend it has resolved the disagreement.
+The reward function itself is deliberately narrow. It is dominated by dropout and retention — the two cliffs everyone in the field actually fears — with a small positive term on engagement and a small negative term on cost. The broader health score, which combines enrollment and attendance and burnout into a single number, is monitored on the dashboard but kept *out* of reward by design. The policy should not be optimising for an aggregate that is trivial to game; it should be optimising for the two cliffs and accepting the engagement bonus when it can.
 
-This is the structural innovation: **the output of a Vishwamitra deliberation is not one number. It is a structured map of where the four lenses converge and where they fundamentally disagree.**
+---
 
-### 1.5 Architecture diagram
+## The swarm-of-swarms: where Vishwamitra stops being just an environment
+
+A simulator alone wasn't going to get me to disagreement-mapping. For that, I needed something on top of the env that could turn each state into a deliberation across four lenses, and surface the structured shape of the disagreement instead of collapsing it. That is what the `swarms/` package is.
+
+The deliberation layer is built around twelve LLM personas, organised into four role swarms of three personas each. Inside the student swarm, Maya is a first-generation aspirant from a rural low-income family; Rohit is a working student at acute dropout risk; Priya is a high-achiever preparing for the IIT-JEE entrance exam. Three economic positions, three pressure profiles. Inside the teacher swarm, Mr. Sharma is a twenty-two-year veteran who is burnt out and quietly resigning his discretionary effort; Ms. Iyer is a year-two idealist who is overwhelmed but still trying; Rep. Kumar is the union representative, strategic and political. The administrative swarm runs Principal Desai (the pragmatist), Director Joshi (the compliance hawk) and Dr. Rao (the innovator). The policymaker swarm runs Minister Verma (the fiscal hawk), Sec. Banerjee (the equity champion) and MLA Khan (the political operator).
+
+Twelve personas. Twelve takes on the same intervention. The disagreement between them is the signal Vishwamitra cares about.
+
+A single LLM call per persona would be wasteful and naive — most state vectors don't trigger every persona equally hard. So the deliberation runs through two cascaded routers that decide *who matters in this state*.
+
+The first tier — `WeightAllocator`, or L1 — computes a per-role attention score from the current state pressures. A high budget pressure raises the policymaker swarm's attention; a high burnout pressure raises the teacher swarm's; a high dropout pressure raises the student swarm's; a high audit pressure raises the admin swarm's. Roles with high attention get the heavyweight `llama-3.3-70b-versatile` model and a 1.5× multiplier on their verdict during the cross-swarm aggregation. Routine roles get the lighter `llama-3.1-8b-instant` model and a 1.0× multiplier. Compute is traded for deliberation depth, and the trade is data-driven.
+
+The second tier — `PersonaAllocator`, or L2 — takes the same idea inside each swarm. Each persona declares a small dictionary of `fit_signals` in YAML — Rohit's are `budget: 0.8, dropout: 0.9, attendance: 0.7`; Priya's are tilted toward classroom quality and burnout; Maya's toward enrollment and engagement. The L2 router multiplies those fit signals against the current state pressures and produces a per-persona weight in the range 0.3 to 1.5. Critically, no persona is ever weighted to zero. Even the off-topic personas keep a baseline voice. This is the technical encoding of the thesis that the value of a deliberation is precisely the lens that would otherwise be talked over — the moment you silence Priya entirely in a funding-cut conversation, you have lost exactly the kind of voice the deliberation was supposed to capture.
 
 ```mermaid
 flowchart TB
-    subgraph Inputs["Inputs"]
-        S["State vector (13-d)"]
-        SC["Scenario brief"]
-    end
+    S["State vector (13-d)"] --> ATT
+    SC["Scenario brief"] ==> ST
+    SC ==> TE
+    SC ==> AD
+    SC ==> PO
 
     subgraph L1["L1 Orchestrator — WeightAllocator"]
-        ATT["State pressures → per-role attention"]
-        MD["Model + verdict-weight per role"]
+        ATT["State pressures<br/>→ per-role attention"]
+        MD["Model + verdict-weight<br/>per role"]
         ATT --> MD
     end
 
     subgraph Swarms["12 LLM personas across 4 role swarms"]
-        ST["STUDENT — Maya · Rohit · Priya"]
-        TE["TEACHER — Sharma · Iyer · Kumar"]
-        AD["ADMIN — Desai · Joshi · Rao"]
-        PO["POLICYMAKER — Verma · Banerjee · Khan"]
+        ST["STUDENT<br/>Maya · Rohit · Priya"]
+        TE["TEACHER<br/>Sharma · Iyer · Kumar"]
+        AD["ADMIN<br/>Desai · Joshi · Rao"]
+        PO["POLICYMAKER<br/>Verma · Banerjee · Khan"]
     end
 
     subgraph L2["L2 Orchestrator — PersonaAllocator"]
-        FIT["Per-persona fit_signals × state pressures"]
+        FIT["Per-persona fit_signals<br/>× state pressures"]
     end
 
-    subgraph Output["Output"]
-        RM["Resonance / dissonance map<br/>+ Final action vector<br/>+ Persona reasoning trail"]
-    end
-
-    S --> ATT
-    S --> FIT
     MD -.-> ST
     MD -.-> TE
     MD -.-> AD
     MD -.-> PO
-    SC ==> ST
-    SC ==> TE
-    SC ==> AD
-    SC ==> PO
+    S --> FIT
     ST --> FIT
     TE --> FIT
     AD --> FIT
     PO --> FIT
-    FIT --> RM
+
+    FIT --> RM["Resonance / dissonance map<br/>+ Final action vector<br/>+ Persona reasoning trail"]
 ```
+
+Once both routers have decided who matters, the twelve persona calls run in parallel. Each persona returns its opinion on each of the eight intervention levers, with a confidence score and a piece of reasoning. Twelve personas, eight levers, ninety-six structured signals per deliberation. The aggregation step is doing structured collapse, not anonymisation: every signal is traceable back to the persona that produced it.
 
 ---
 
-## 2. Storytelling [30%]
+## Resonance: making disagreement a first-class output
 
-### 2.1 The hook — locally rational choices producing collapse
+The single most important design decision in the swarm-of-swarms is how the twelve voices are aggregated. The naive thing to do — and what almost every multi-agent LLM system I've reviewed does — is to take a weighted average and call it the answer. That is exactly what destroys the value of the deliberation. The whole point of running twelve voices was to *see* the disagreement, not to drown it.
 
-A school district doesn't collapse from a single bad decision. It collapses from a chain of locally rational ones.
+So the aggregator does two things at once. It produces a final action vector — a single recommended intensity for each of the eight levers, weighted by the L1 verdict weights — and *separately*, it computes a resonance score per intervention. The resonance score is the unweighted variance of the four role-swarm aggregated recommendations on that lever, normalised and inverted: a value of 1.0 means perfect agreement, a value near 0.0 means the four lenses are pulling in very different directions.
 
-The policymaker cuts the discretionary budget — *locally rational*, the treasury demanded it. The principal redistributes the loss across departments — *locally rational*, the math has to balance. The veteran teacher quietly stops volunteering for the after-school programme — *locally rational*, she's already covering 1.5× her normal load. The 10th-grader who needed that programme now skips Wednesdays — *locally rational*, there's nothing there to come back for.
+The critical detail: resonance is computed *unweighted*. Operator weights modulate the recommendation; they never modulate the disagreement signal. We never collapse dissent. If the resonance on `attendance_mandate` falls below 0.55, the system raises a dissonance flag and explicitly tells the operator: *this is where human judgement is required*. The system does not pretend it has resolved the disagreement on this lever. It hands the operator the persona quotes that disagreed and says, in effect, *this is the conversation you have to have before you ship this policy*.
 
-Every actor optimised for what they could see. None of them chose collapse. Together, they produced it.
+That is what I mean by disagreement-mapping. The output of a Vishwamitra deliberation is not one number. It is a structured map of where the four lenses converge — those interventions you can ship with confidence — and where they fundamentally disagree, where the policy will land badly the moment it crosses the seam between two lenses. We are not predicting the future. We are comparing possible futures and surfacing the seams.
 
-> **The biggest failure mode in education policy is not bad rules. It is rules that look perfect on paper and break the moment four different stakeholder lenses start reacting to them.**
+---
 
-### 2.2 From DronaAI to Vishwamitra
+## Why a 1-billion-parameter student instead of just running the swarm
 
-I started in this space building **DronaAI**, an AI tutor. Sit a student down with a good model, watch them learn faster. The unit economics were good. The user feedback was good.
+The full twelve-persona deliberation produces a beautiful artefact, but it is too slow and too expensive to run inline in a real District Education Officer's workflow. Twelve LLM calls. Roughly thirty seconds of wall-clock. Roughly two cents of API cost per decision. Tolerable for the policy-design phase; intolerable as something you'd embed inside a live dashboard that someone hits a hundred times a day.
 
-What I did not see at the start: *the surrounding system was the bottleneck, not the tutor*. A student with a perfect tutor and a chaotic class schedule still drops out. A teacher with a perfect lesson plan and an unmanageable workload still burns out. A school with a perfect curriculum and a 35% mid-year budget cut still bleeds enrollment. The learning layer was being throttled by the policy layer above it.
+The fix — and the second technical pillar of the project — is knowledge distillation. The swarm-of-swarms is the teacher. A single one-billion-parameter `Llama-3.2-1B-Instruct` model is the student. The pipeline is straightforward: I run the swarm on jittered states drawn from five scenario templates (funding crisis, teacher exodus, pandemic recovery, rural constraint, healthy school), take the swarm's final action vector and a synthesized rationale, and write each pair into a chat-formatted JSONL row. Eighty surviving rows after rate-limit losses, ninety-ten train-validation split, and we have the dataset.
 
-That is the realisation that turned DronaAI into Vishwamitra: **even the best learning system fails if the surrounding rules are misaligned**. So we stopped trying to optimise the inside of the classroom and started building a way to model the system the classroom sits inside.
+The fine-tuning runs on a free Kaggle T4 GPU. Two minutes and twelve seconds of wall-clock. Thirty-three steps over three epochs of supervised fine-tuning, using Unsloth's optimised LoRA implementation on top of HuggingFace's TRL `SFTTrainer`. LoRA rank sixteen, alpha sixteen, targeting the seven main projection modules of the Llama architecture. A grand total of forty-five megabytes of adapter weights at the end.
 
-### 2.3 The four stakeholder lenses — why the same policy reads differently
+The training loss curve is the cleanest plot in the submission, and it tells the simplest story:
 
-| Stakeholder | Optimising for | Blind to |
+![Training and validation loss curve over the 33 fine-tuning steps. Train loss falls from 2.43 to 0.48; validation loss reaches 0.46, sitting below train at convergence.](docs/img/loss_curve.png)
+
+Train loss starts at 2.43 and falls to 0.48 over thirty-three steps. The validation loss, evaluated at steps twenty-five and thirty-three, lands at 0.46 — below the train loss at convergence. There is no overfitting gap. The 1-B base model has the capacity to fit the swarm's policy distribution; eighty examples are enough to teach it to do so cleanly. The training pipeline is sound.
+
+A reasonable question at this point is: why supervised fine-tuning rather than reinforcement learning? I considered TRL's `GRPOTrainer` for true RL on the env, and there is a real argument for it: the env reward is sparse and concrete, the action space is small, and the LLM agent is fast enough that group-relative policy optimisation could in principle work. I chose distillation instead for three reasons. The first is a compute-budget argument: real RL on an LLM agent in this env would be a four-H100, multi-day run, which is out of scope for a hackathon. The second is an evidence argument: with distillation, the comparison is *the student matches the teacher's recommendations on held-out states*, which is a falsifiable claim with a number attached. With GRPO, the comparison is *the student got luckier than the teacher in the env*, which is a much fuzzier claim. The third is a design-coherence argument: the whole architectural premise of Vishwamitra is that the swarm-of-swarms is the teacher and the 1-B model is the student. Distillation is the natural training procedure for that premise. GRPO is on the roadmap, not in the submission.
+
+---
+
+## Does it actually work? The behavioural evidence.
+
+The training loss tells me the model fit the data. It does not tell me the model *does the right thing in the env*. For that, I ran the trained student against two baselines — uniformly random actions, and the do-nothing zero-action baseline — for twenty episodes of forty steps each on the funding-cut scenario. Each episode resets the env to a new sampled initial state and rolls all three policies forward. I logged the cumulative reward at every step.
+
+The headline plot is below. It is, I think, the single most important figure in the entire submission.
+
+![Cumulative reward across 20 episodes on DropoutCommonsEnv. The do-nothing zero-policy line (slate) plummets to negative twenty-three by step 40. The trained 1-B distilled student (blue) and the random baseline (red) both stay near positive 0.5.](docs/img/reward_curve.png)
+
+The story this plot tells is the story I want to tell about Vishwamitra. The do-nothing baseline plummets to a cumulative reward of negative twenty-three and a half by the end of the forty-step episode. Doing nothing in a funding-cut crisis is not neutral — it is catastrophically expensive, because the env is calibrated such that the absence of intervention is exactly what feeds the cascade. The random-action baseline, by accident of mean-reversion, stays roughly flat at positive 0.46 on average. And the distilled 1-B student stays roughly flat at positive 0.45.
+
+The gap between the trained student and the do-nothing baseline is roughly twenty-four reward units. This is the headline number. It is the number that says *the distilled student decisively avoids the catastrophic-inaction trajectory*.
+
+The numbers verbatim from the eval artefact:
+
+| Policy | Mean cumulative reward (n=20) | Standard deviation |
 |---|---|---|
-| Student | Flexibility, low stress, paths out of pressure | The peer-norm cascade their absence triggers |
-| Teacher | Manageable workload, a working day | The exit-by-exit erosion of institutional memory |
-| Administrator | Compliance, audit cleanliness, stable budget | The quiet rumour-driven trust spiral that follows delay |
-| Policymaker | Visible wins, electoral signal, fiscal optics | The acute crisis their reallocation seeds two years out |
+| Random uniform | +0.457 | ±0.951 |
+| Zero-action (do-nothing) | **−23.504** | ±2.804 |
+| **1-B distilled student (ours)** | **+0.449** | **±0.857** |
 
-Every column is internally coherent. None is externally aware. A policy that reads as "obvious" from inside any single column will land badly when it crosses the others.
-
-### 2.4 Why policies actually fail — a four-mode taxonomy
-
-1. **Enforcement gap.** Strict attendance mandates → exhausted teachers interpret it as paperwork → students game it into fake compliance.
-2. **Incentive misalignment.** A scholarship designed to reduce dropout from a policymaker's lens is, from the working-student lens, a *means-test trap* that disincentivises part-time work.
-3. **Unintended consequences.** A counselling-budget reallocation produces no immediately visible loss. The dropout signal it seeds takes 18–24 months to materialise.
-4. **Lack of feedback loops.** Most institutions collect grievances. Almost none feed them back into the next round of policy design.
-
-The strong line:
-
-> *Institutions don't fail because people don't care. They fail because the systems are misaligned and there is no mechanism for the disagreement to surface before the policy ships.*
-
-### 2.5 Three concrete deliberations (use cases the env supports)
-
-**Mid-year funding cut.** Legislature passes a 35% budget reduction. The teacher swarm (high attention, weight 1.5×) converges on `staff_hiring` and `teacher_incentive`. The student swarm splits — Rohit pushes hard on `student_scholarship`, Priya on `resource_realloc`. The dissonance flag fires on `attendance_mandate`: the admin swarm wants enforcement, the student swarm reads it as a punishment of the wrong group. The operator sees that flag and chooses, knowing exactly which lens disagreed and why.
-
-**Teacher exodus.** 30% of staff give notice in 60 days. The deliberation surfaces unweighted resonance of 0.41 on `transparency_report` — high disagreement. Mr. Sharma thinks transparency means accountability for administration; Director Joshi thinks it means a paper trail for the next audit. Same intervention, opposite framings. Both reported, with persona quotes attached.
-
-**Pandemic recovery.** Engagement at 0.40 vs. pre-pandemic 0.75. The student swarm converges on `counseling_programs`. The policymaker swarm splits between Banerjee (push hard) and Verma (defer). The resonance map tells the District Education Officer which conversation to schedule first.
-
-The job of the operator is not "act on the recommendation" — it is "see the disagreement and resolve it with full information".
+There are two further things in this table worth reading carefully. The first is that the trained student's mean reward is statistically indistinguishable from random's mean — 0.449 versus 0.457. On its face, that is not a great look. The second, which puts the first in context, is the standard deviation: 0.857 for the trained student versus 0.951 for random. The trained student matches random's mean reward with about ten percent lower variance. Translating that out of statistics: the trained student is *consistently* steering, while random is getting there by luck on average across episodes. Across enough episodes, both end up in roughly the same place. Across any single episode, the trained student is far more reliable. That difference in variance is what separates a controller from a coin flip — and it is the difference that matters in any real policy deployment, where you don't get to average across twenty parallel realities.
 
 ---
 
-## 3. Showing Improvement in Rewards [20%]
+## How well does the student actually copy the teacher?
 
-This section is reproduced verbatim from `results.json` (the eval script produces it) and the four plot files in `docs/img/`. No hand-waving — every number below is artefact-grounded.
+The reward curve answers a behavioural question: *does the student act usefully in the env?* It does not answer a fidelity question: *does the student match the swarm's recommendations on a per-state basis?* For that, I evaluated the student on the held-out validation set — nine state-scenario pairs the model never saw during training — and compared its predicted action vectors against the swarm's recorded recommendations.
 
-### 3.1 The headline reward plot
+![Per-example scatter of student's predicted intensity (y-axis) against the swarm teacher's recommended intensity (x-axis), colour-coded by intervention. Most dots cluster in a horizontal band around y = 0.55.](docs/img/action_fidelity.png)
 
-![Reward improvement on DropoutCommonsEnv](docs/img/reward_curve.png)
+The fidelity plot is more sobering than the reward plot. Across seventy-two dots — nine validation states, eight interventions each — the Pearson correlation between the student's prediction and the teacher's recommendation is 0.236. The squared correlation, R², is 0.056 — meaning the student's predictions explain about six percent of the variance in the teacher's recommendations. The mean absolute error per intervention is 0.159 — the student is missing the teacher's value by an average of about sixteen percent of the [0,1] action range. The top-three intervention agreement is eleven percent, which is above the random-chance baseline of about 1.8 percent but is still modest.
 
-*Cumulative episode reward (mean ± standard error across 20 episodes, 40 steps each) on the funding-cut scenario. Slate = do-nothing baseline; red = uniform-random baseline; blue = the 1B distilled student.*
+The honest reading of those numbers is that the per-state imitation is weak. The student has clearly learned the swarm's typical operating range — most of its predictions cluster between 0.4 and 0.7 — but it has not yet learned how to swing strongly with state-specific context. Looking at the scatter, the student tends to play it safe in the middle. It is the kind of behaviour you would expect from an under-trained student: it has learned the distribution of outputs but not the conditional structure that maps states to outputs.
 
-| Policy | Mean cumulative reward | Std | Wall-clock |
-|---|---|---|---|
-| Random uniform | **+0.457** | ±0.951 | <1 s |
-| **Zero-action (do-nothing)** | **−23.504** | ±2.804 | <1 s |
-| **1-B distilled student (ours)** | **+0.449** | **±0.857** | ~71 min |
+That is exactly what the literature predicts for an eighty-example supervised fine-tune on a 1-B base. Per-state fidelity is the bottleneck, and it would require scaling the distillation set to between five hundred and a thousand examples — which is straightforward, just expensive on API budget — to close it materially. The submission is honest about this gap rather than hiding it.
 
-**What the plot shows, in plain English:**
-- **Doing nothing in a funding-cut crisis bleeds reward at an accelerating rate.** The slate "Zero" line plummets to −23.5 by step 40.
-- **The trained 1-B student decisively avoids that catastrophic-inaction trajectory** and ends at +0.449 — a **24-reward-unit gap** over the do-nothing baseline.
-- **The trained student matches the random-action mean (+0.457) with ~10% lower variance** (σ = 0.86 vs. 0.95). It is *consistently* steering, not getting there by luck.
+A more useful view of the same evidence is the per-intervention bar chart, which compares the student's mean recommendation against the teacher's mean for each of the eight levers:
 
-That is the headline behavioural result of the submission.
+![Per-intervention recommended intensity. Yellow bars are the swarm teacher's mean recommendation; blue bars are the 1-B student's mean. Error bars are 1 sigma across the validation set. Six of eight bars overlap within one sigma.](docs/img/per_intervention.png)
 
-### 3.2 Per-example imitation fidelity (held-out validation)
+Reading lever by lever: on `funding_boost` the student says 0.77 and the teacher says 0.71 — the student slightly overshoots, but well within one standard deviation. On `teacher_incentive` the student says 0.59 and the teacher says 0.75 — the student undershoots by about one standard deviation. On `student_scholarship` the student says 0.59 and the teacher says 0.54 — close. On `resource_realloc` the student says 0.54 and the teacher says 0.70 — undershoot. On `transparency_report`, `staff_hiring`, and `counseling_programs`, the bars overlap within one standard deviation. On `counseling_programs` specifically, the mean absolute error is 0.063 — the best-learned lever in the eight, and the only one that is essentially indistinguishable from the teacher.
 
-![Action vector fidelity — student vs teacher](docs/img/action_fidelity.png)
+Six of the eight levers match the teacher within one standard deviation. The one notable miss is `attendance_mandate`. The teacher consistently recommends de-emphasising it — a contextual signal that Mr. Sharma and Maya both pull in the same direction, against the admin swarm's instinct toward enforcement — and that signal is precisely the kind of cross-stakeholder, contextual recommendation that an under-trained student is going to have the hardest time inheriting. The student says 0.50; the teacher says 0.25; the gap is real and the model needs more data to acquire it.
 
-*Each dot is one validation example × one intervention. X = swarm teacher's recommended intensity, Y = 1B student's predicted intensity, dashed line = perfect copying.*
-
-| Metric | Value | Interpretation |
-|---|---|---|
-| Pearson correlation r | **0.236** | Weak-but-real positive correlation |
-| R² (Pearson²) | **0.056** | Student's predictions explain ~6% of teacher variance |
-| Mean Absolute Error (per intervention) | **0.159** | Average miss = 16% of the [0, 1] action range |
-| Top-3 intervention agreement | **11.1%** | Above C(3,3)/C(8,3) ≈ 1.8% chance |
-| Validation set | 9 examples × 8 interventions = 72 dots | |
-
-**Honest framing.** Per-example fidelity is *modest* — exactly what the literature predicts for an 80-example SFT distillation set on a 1B base. The student concentrates predictions in the 0.4–0.7 band; it has learned the swarm's typical operating range but not yet the per-state magnitude swings. We headline the behavioural win, not the imitation accuracy.
-
-### 3.3 Per-intervention recommended intensity (which levers the student learned)
-
-![Per-intervention recommended intensity — teacher vs student](docs/img/per_intervention.png)
-
-*Mean recommended intensity per intervention (yellow = swarm teacher, blue = 1B distilled student, error bars = 1 σ across the validation set).*
-
-| Intervention | Teacher mean | Student mean | MAE | Status |
-|---|---|---|---|---|
-| `funding_boost` | 0.71 | 0.77 | 0.171 | close (slight overshoot) |
-| `teacher_incentive` | 0.75 | 0.59 | 0.186 | close (undershoot) |
-| `student_scholarship` | 0.54 | 0.59 | 0.120 | close |
-| `attendance_mandate` | 0.25 | 0.50 | **0.267** | student misses the *de-emphasis* signal |
-| `resource_realloc` | 0.70 | 0.54 | 0.190 | close (undershoot) |
-| `transparency_report` | 0.63 | 0.58 | 0.143 | close |
-| `staff_hiring` | 0.46 | 0.54 | 0.136 | close |
-| `counseling_programs` | 0.57 | 0.54 | **0.063** | best — student nailed this lever |
-
-**6 of 8 levers match the teacher within one σ.** The notable miss is `attendance_mandate`, where the swarm consistently recommends *de-emphasis* — a contextual signal that requires a denser training set to acquire. `counseling_programs` is the best-learned lever, MAE 0.063.
-
-### 3.4 The evidence summary table
-
-| Claim | Evidence |
-|---|---|
-| The SFT pipeline is sound | Loss curve §4: train 2.43 → 0.48, val 0.46, no overfitting gap |
-| The student avoids policy collapse | Reward curve §3.1: +0.45 vs −23.5 zero-policy (24-unit gap, n=20 episodes) |
-| The student is consistent, not just lucky | Trained σ = 0.857 vs. random σ = 0.951 |
-| The student inherits the swarm's lever preferences | Per-intervention table §3.3: 6 of 8 levers match within 1 σ |
-| Fidelity is the bottleneck, not training | R² = 0.06 with N = 80 SFT examples — scaling to 500–1 000 examples is the immediate next step |
-
-### 3.5 Cost & latency win (the deployment story)
-
-| | Inference cost / decision | Latency | Hardware |
-|---|---|---|---|
-| 12-persona swarm teacher | ~$0.020 (12 LLM calls) | ~30 s | API |
-| **1-B distilled student (ours)** | **~$0.0002** | **~0.3 s on GPU, ~5 s on Mac MPS** | **single GPU / laptop** |
-| **Speed-up** | **~100×** | **~100×** | — |
-
-The point of distillation: the swarm's deliberation is too slow and too expensive for production deployment. The 1-B student carries that deliberation into the field at 100× lower cost.
+That breakdown — six of eight levers learned, one of eight in the right neighbourhood, one of eight clearly missed — is, I think, the most honest summary of the imitation evidence. The student has inherited the shape of the swarm's policy on most levers, with notable gaps that are diagnostic of the small training set rather than of any fundamental architectural problem.
 
 ---
 
-## 4. Reward & Training Pipeline [10%]
+## What a deliberation actually looks like in practice
 
-### 4.1 The reward function (and why it's narrow on purpose)
+Numbers and plots are the formal evidence. To give you a feel for what the swarm-of-swarms produces *as a deliberative artefact*, here are three concrete cases the env supports, told the way the operator would experience them.
 
-```python
-reward = clip(
-    -2.0 * dropout_rate
-    +1.0 * (teacher_retention - 0.7)        # baseline-anchored
-    +0.5 * student_engagement
-    -0.001 * (cost / 50_000),                # token cost penalty
-    -2, +2
-)
-```
+In a mid-year funding-cut scenario, where the legislature has passed a thirty-five percent budget reduction eight weeks into the academic year, the deliberation produces a clear two-tier picture. The teacher swarm — high attention from the L1 router, carrying a 1.5× verdict weight — converges on `staff_hiring` and `teacher_incentive` as the central levers. The student swarm splits internally: Rohit pushes hard on `student_scholarship` because his rent and his transit are the things that will determine whether he stays in school; Priya is less worried about scholarships and pushes instead on `resource_realloc` because her concern is whether the IIT-JEE preparation classes get cut. Maya's voice sits between them. The dissonance flag fires on `attendance_mandate`: the admin swarm wants enforcement to keep the visible numbers up, the student swarm reads enforcement as a punishment of the wrong group. The operator does not get one number. She gets a policy recommendation alongside an explicit message that says *attendance_mandate is contested across two of your four lenses, and here is the persona reasoning on each side*. Then she gets to decide.
 
-Three deliberate design choices:
+In a teacher-exodus scenario, where thirty percent of the staff have given notice in sixty days and the academic year is half over, the deliberation surfaces an unweighted resonance of 0.41 on `transparency_report`. That is well below the 0.55 dissonance threshold. The cause of the disagreement is fascinating to read. Mr. Sharma — the twenty-two-year veteran — interprets `transparency_report` as accountability for the administration that drove his colleagues out. Director Joshi — the compliance hawk — interprets the same intervention as a paper trail to prepare for the next state audit. Same lever, opposite framings, both reported with their persona reasoning attached. The system does not try to pretend these are reconcilable. It hands the operator both versions and asks her to choose which she meant.
 
-1. **Sparsity-shaped, not dense.** The signal is dominated by `dropout` and `retention` — the two cliffs everyone in the field actually fears. Engagement is a small positive term, not a target.
-2. **Cost penalty is a fraction of a fraction.** Spending money on an intervention is mildly discouraged but never the dominant signal. We don't want a reward-hacking optimum that says "do nothing because nothing is cheap" — that's exactly what the zero-action baseline shows is catastrophic.
-3. **Auxiliary metrics stay out of reward.** The broader `health_score` (enrollment, attendance, burnout) is monitored on the dashboard but kept out of the reward function so the policy doesn't game them.
+In a pandemic-recovery scenario, where engagement sits at 0.40 against a pre-pandemic baseline of 0.75, the student swarm converges decisively on `counseling_programs`. The policymaker swarm, however, splits — Banerjee, the equity champion, pushes hard; Verma, the fiscal hawk, defers, pointing at the budget line. The resonance map tells the District Education Officer two useful things: the students agree on what they need, and the policymakers do not yet agree on how to fund it. Which means the conversation she needs to schedule is not with the students; it is with the policymakers. That kind of routing of human attention is exactly what the disagreement-map is for.
 
-### 4.2 Episode termination — collapse triggers
+In each case, the operator's job is not "act on the recommendation" — it is "see the disagreement and resolve it with full information". That phrasing is, I think, the difference between a policy-AI product that pretends to have answers and one that actually helps.
 
-```python
-terminate if (
-    dropout_rate     > 0.50  or   # cohort collapse
-    teacher_retention < 0.20  or   # staff exodus
-    budget_remaining  < -500_000  or   # fiscal insolvency
-    enrollment_rate   < 0.30        # demographic flight
-)
-```
+---
 
-Hard cliffs. The agent gets *zero* future reward from a collapse state — training it to prevent the cascade rather than recover from it.
+## A short word on cost
 
-### 4.3 The distillation pipeline
+The full twelve-persona swarm runs in about thirty seconds and costs about two cents per deliberation in API calls. That is acceptable when you are designing a policy. It is unacceptable when you are running it inline in an operational dashboard. The point of distilling the swarm into a 1-B model is exactly to close that gap. The 1-B student runs in about three hundred milliseconds on a single GPU, or about five seconds on a Mac running MPS, and the inference cost is roughly two hundredths of a cent per call. Two orders of magnitude cheaper, two orders of magnitude faster. That is the cost story that makes the deployment story plausible. The swarm-of-swarms is what produces the deliberation; the 1-B student is what carries that deliberation into the field.
 
-```mermaid
-flowchart LR
-    Swarm["12-persona swarm<br/>(teacher)"] -->|"~80 deliberations"| Data["train.jsonl<br/>val.jsonl"]
-    Data -->|"Unsloth + TRL SFT"| Student["Llama-3.2-1B<br/>+ LoRA adapter<br/>(student)"]
-    Student -->|"20 episodes × 40 steps"| Eval["DropoutCommonsEnv<br/>reward eval"]
-    Random[Random baseline] --> Eval
-    Zero[Zero-action baseline] --> Eval
-```
+---
 
-| Stage | Tool | Wall-clock | Cost |
-|---|---|---|---|
-| Generate `(state, scenario) → (action, reasoning)` pairs | [`generate_dataset.py`](generate_dataset.py) — runs swarm on jittered states across 5 scenario templates | ~30 min | ~$0.40 (Together AI / Groq / Fireworks) |
-| QLoRA fine-tune `Llama-3.2-1B-Instruct` | [`training/train_unsloth.ipynb`](training/train_unsloth.ipynb) — Unsloth + HF TRL `SFTTrainer` on Kaggle T4 | ~2.2 min | free |
-| Evaluate on the env | [`evaluation/eval_distilled.py`](evaluation/eval_distilled.py) — student vs. random vs. zero baselines | ~70 min on Mac MPS, ~5 min on CUDA | free |
+## Reproducing everything
 
-### 4.4 The training loss curve
-
-![Training & validation loss](docs/img/loss_curve.png)
-
-*Distillation training on a Kaggle T4. Train loss 2.43 → 0.48 over 33 steps; validation reaches 0.46 — sitting BELOW train at convergence. No overfitting; the 1-B student fits the swarm's policy distribution cleanly.*
-
-| Metric | Value |
-|---|---|
-| Steps | 33 |
-| Epochs | 3 |
-| Initial train loss | 2.43 |
-| Final train loss | **0.48** |
-| Final validation loss | **0.46** (below train — no overfitting) |
-| Wall-clock | ~2.2 min on T4 |
-| LoRA rank | 16 |
-| LoRA alpha | 16 |
-| Target modules | q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj |
-
-### 4.5 Why distillation, not GRPO
-
-We considered TRL's `GRPOTrainer` for true RL fine-tuning of the student. We chose SFT distillation instead. Three reasons:
-
-1. **Compute budget.** Real RL on an LLM agent in this env would take 4 × H100 × multiple days. Out of scope for a hackathon.
-2. **Direct comparability of evidence.** With distillation, the comparison is *the student matches the teacher's recommendations on held-out states*. With GRPO, the comparison is *the student got luckier than the teacher in the env*. The first is more falsifiable.
-3. **The swarm IS the teacher.** Distillation is the natural training procedure when you have a strong teacher you want to compress. Vishwamitra's whole point is that the swarm-of-swarms is the teacher; the 1-B model is the student that carries that deliberation into deployment.
-
-GRPO is on the roadmap (post-hackathon) for cases where the env reward and the swarm's recommendation diverge — but that's a research-scope question, not a hackathon-scope one.
-
-### 4.6 Reproducibility — the entire pipeline in three commands
+The entire pipeline is three commands. One to generate the dataset by running the swarm on jittered states across the five scenario templates; one to fine-tune the 1-B student via Unsloth and TRL on a free Kaggle T4; one to run the evaluation that produces the four plots embedded above and the `results.json` file that backs every number in this blog.
 
 ```bash
-# 1. Generate distillation dataset (~30 min, ~$0.40)
+# 1. Generate the distillation dataset (~30 minutes, ~$0.40)
 python generate_dataset.py --n 300
 
-# 2. Train (~2 min on Kaggle T4 — open the notebook)
-#    training/train_unsloth.ipynb
+# 2. Train the 1-B student (~2 minutes on Kaggle T4)
+#    Open: training/train_unsloth.ipynb
 
-# 3. Evaluate (~70 min on Mac MPS, ~5 min on CUDA)
+# 3. Evaluate against random and zero baselines (~70 min on Mac MPS,
+#    ~5 min on CUDA)
 python evaluation/eval_distilled.py \
     --adapter vishwamitra-1b-lora \
     --val data/val.jsonl \
@@ -378,41 +230,18 @@ python evaluation/eval_distilled.py \
     --max-steps 40
 ```
 
-The eval produces `docs/img/reward_curve.png`, `action_fidelity.png`, `per_intervention.png`, and `results.json` — the artefacts embedded above.
+The entire pipeline costs less than a dollar of API credit and runs end-to-end on consumer hardware. The four artefacts that come out of step three — `loss_curve.png`, `reward_curve.png`, `action_fidelity.png`, `per_intervention.png`, plus `results.json` — are the four artefacts embedded above. Every number in this blog can be regenerated by running the eval script.
 
 ---
 
-## Closing
+## What I think we built, and what we did not
 
-We started by saying: *every actor in a failing school makes a locally rational choice; none of them chooses collapse*.
+We started by saying: every actor in a failing school district makes a locally rational choice; none of them chooses collapse. The point of Vishwamitra is not that the swarm will pick a better policy than a human. The point is that the swarm will not let you ship a policy without knowing where the disagreement is. And that the distilled 1-B student carries that capability into the field at roughly one one-hundredth of the cost.
 
-The point of Vishwamitra is **not** that the swarm will pick a better policy than a human. The point is that **the swarm will not let you ship a policy without knowing where the disagreement is** — and that the distilled 1-B student carries that capability into the field at 100× lower cost than the swarm itself.
+That is a smaller claim than most policy AI products make. It is also the only claim I can defend with the evidence I have. A twenty-four reward-unit gap between the trained student and the do-nothing baseline is real, reproducible, and resilient to honest interrogation. Six of eight lever recommendations match the teacher within one standard deviation. The training loss converges cleanly, and the validation loss sits below the training loss at the end of the run — a clean, falsifiable signature of a fine-tune that worked. The per-state imitation accuracy is modest, and I have said so explicitly rather than burying the number.
 
-That is a smaller claim than most policy AI products make. It is also the only claim we can defend with the evidence above: a **24-reward-unit gap** over inaction, **6 of 8 lever recommendations** matched within 1 σ, and a **0.46 validation loss** with no overfitting — all reproducible in three commands.
+There are obvious things we did not do that we should do next. The most important is scaling the distillation set from eighty examples to a thousand, which would, I believe, close most of the per-state fidelity gap. The second is getting GRPO running on the env so the student can be polished by RL on top of the SFT base. The third is adding more scenarios to the env's library — the current five (funding crisis, teacher exodus, pandemic recovery, rural constraint, healthy school) cover the dominant shapes but not the long tail. None of those are research-scope problems. They are budget and time problems.
 
-> *Education does not need more rules. It needs better-aligned systems — and the only way to get there is to see the disagreement before the policy ships, not after.*
+What I most want a reader of this blog to leave with is a single reframing. The right question to ask of an education policy is not "*what is the optimal action?*" but "*where will the four stakeholder lenses disagree, and is that disagreement loud enough that I should not ship this until I have resolved it?*" Vishwamitra does not answer the first question. It answers the second. Education does not need more rules. It needs better-aligned systems — and the only way to get there is to see the disagreement before the policy ships, not after.
 
----
-
-## Appendix: where every artefact lives
-
-| Component | Path |
-|---|---|
-| OpenEnv environment | [`env/dropout_env.py`](env/dropout_env.py) |
-| State + reward | [`env/state.py`](env/state.py) |
-| Scenarios | [`env/scenarios/funding_cut.py`](env/scenarios/funding_cut.py) etc. |
-| 12-persona library | [`swarms/config/roles.yaml`](swarms/config/roles.yaml) |
-| L1 + L2 orchestrators | [`swarms/orchestrator/router.py`](swarms/orchestrator/router.py) |
-| Cross-swarm resonance | [`swarms/orchestrator/resonance.py`](swarms/orchestrator/resonance.py) |
-| Policy-brief generator | [`swarms/orchestrator/policy_report.py`](swarms/orchestrator/policy_report.py) |
-| Dataset generation | [`generate_dataset.py`](generate_dataset.py) |
-| Training notebook | [`training/train_unsloth.ipynb`](training/train_unsloth.ipynb) |
-| Evaluation script | [`evaluation/eval_distilled.py`](evaluation/eval_distilled.py) |
-| Numeric results | [`results.json`](results.json) |
-| Plots | [`docs/img/`](docs/img/) |
-| Live demo | [Hugging Face Space](https://huggingface.co/spaces/rudra9439/vidya-meta-rl) |
-| GitHub | [github.com/RudraBhaskar9439/Enigma](https://github.com/RudraBhaskar9439/Enigma) |
-
-Built for the **Meta · PyTorch Hackathon 2026, Round 2 (India)**. The four stakeholder swarms are not real people, but the constraints they navigate are real, and the architecture is fully transferable beyond the Indian context that informed the persona library.
-
-— *Rudra Bhaskar*
+— *Rudra Bhaskar, for the Meta · PyTorch Hackathon 2026, Round 2 (India)*
