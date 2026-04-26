@@ -49,7 +49,6 @@ A multi-agent OpenEnv simulation of educational systems collapse, framed as a **
 
 - [The problem — a coordination failure, not a resource failure](#-the-problem--a-coordination-failure-not-a-resource-failure)
 - [Game-theoretic foundations](#-game-theoretic-foundations)
-- [What's new in Round 2](#-whats-new-in-round-2)
 - [Architecture](#️-architecture)
 - [Quick start](#-quick-start)
 - [The environment — `DropoutCommonsEnv`](#-the-environment--dropoutcommonsenv)
@@ -131,19 +130,6 @@ Each of our 12 LLM personas is a model of a **bounded-rational agent** [^10] —
 | Coordination failure | Low-resonance lever flagged for human judgement |
 
 > **The contribution.** Vishwamitra does *not* claim to compute the social-welfare optimum. It claims to surface the structured disagreement that any honest mechanism designer needs to see *before* a policy ships. That is a smaller, more defensible claim — and the one we have evidence for.
-
----
-
-## ✨ What's new in Round 2
-
-This is the Round-2 evolution of the Round-1 `DropoutCommonsEnv`. Four new components sit on top of the original environment:
-
-| Component | What it does | Where to look |
-|---|---|---|
-| **Two-tier swarm orchestrator** | L1 `WeightAllocator` chooses model + verdict-weight per *role*; L2 `PersonaAllocator` weights agents *within* each swarm by persona-challenge fit | [`swarms/orchestrator/router.py`](swarms/orchestrator/router.py) |
-| **Resonance / dissonance map** | Cross-swarm Schelling-point detector that surfaces stakeholder disagreement as a first-class output, not an artefact to be smoothed over | [`swarms/orchestrator/resonance.py`](swarms/orchestrator/resonance.py) |
-| **Knowledge-distilled 1-B student** | A `Llama-3.2-1B-Instruct` LoRA trained via SFT on the swarm's deliberations; matches teacher recommendations at ~100× lower inference cost | [`training/train_unsloth.ipynb`](training/train_unsloth.ipynb) |
-| **Educational Policy Brief PDF** | Three-call LLM-authored policy document organised around the six canonical stages of the policymaking process — IEEE-grade artefact, runnable inline | [`swarms/orchestrator/policy_report.py`](swarms/orchestrator/policy_report.py) |
 
 ---
 
@@ -629,7 +615,7 @@ Enigma/
 
 ## 🛣️ Roadmap
 
-- [x] OpenEnv-compatible env with calibrated stakeholder dynamics (Round 1)
+- [x] OpenEnv-compatible env with calibrated stakeholder dynamics
 - [x] Two-tier swarm orchestrator: state → model + weight per role + per persona
 - [x] Resonance / dissonance metric with explicit human-judgement gating
 - [x] Three-call LLM-authored Educational Policy Brief PDF (six-stage policymaking template)
