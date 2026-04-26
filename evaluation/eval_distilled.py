@@ -42,6 +42,138 @@ ACTION_NAMES = [
     "resource_realloc", "transparency_report", "staff_hiring", "counseling_programs",
 ]
 
+# Must mirror generate_dataset.py:SYSTEM_PROMPT exactly — the model was
+# fine-tuned on these tokens; even small wording drift hurts inference.
+SYSTEM_PROMPT = (
+    "You are an educational policy assistant. Given a system state and a "
+    "scenario brief, recommend intervention intensities (each in [0, 1]) and "
+    "provide a brief rationale. Output a single JSON object with keys "
+    "`action_vector` (eight named floats) and `reasoning` (1-3 sentences)."
+)
+
+# Maps each slot of env.state.SystemState.to_obs_array() to the training-format
+# field name (or None to drop). policy_compliance is reused as trust_score
+# because the env doesn't expose a separate trust_score field.
+_STATE_FIELD_MAP: list[tuple[str | None, Any]] = [
+    ("enrollment_rate",     lambda x: round(float(x), 3)),
+    ("attendance_rate",     lambda x: round(float(x), 3)),
+    ("dropout_rate",        lambda x: round(float(x), 3)),
+    ("teacher_retention",   lambda x: round(float(x), 3)),
+    (None, None),
+    ("avg_class_size",      lambda x: int(round(float(x) * 60))),
+    (None, None),
+    ("resource_allocation", lambda x: round(float(x), 3)),
+    ("student_engagement",  lambda x: round(float(x), 3)),
+    ("teacher_burnout",     lambda x: round(float(x), 3)),
+    ("trust_score",         lambda x: round(float(x), 3)),
+    ("budget_remaining",    lambda x: float(round(float(x) * 2_000_000 / 1000) * 1000)),
+    ("step",                lambda x: int(x)),
+]
+
+
+def _obs_to_state_dict(obs) -> dict[str, Any]:
+    state: dict[str, Any] = {}
+    for i, (name, conv) in enumerate(_STATE_FIELD_MAP):
+        if name is None or i >= len(obs):
+            continue
+        state[name] = conv(obs[i])
+    return state
+
+
+def _format_user_prompt(state: dict[str, Any], scenario: str) -> str:
+    state_lines = "\n".join(f"  - {k}: {state[k]}" for k in state)
+    return (
+        f"STATE:\n{state_lines}\n\n"
+        f"SCENARIO: {scenario}\n\n"
+        "Respond with a single JSON object in this exact shape:\n"
+        '{"action_vector": {"funding_boost": <float>, '
+        '"teacher_incentive": <float>, "student_scholarship": <float>, '
+        '"attendance_mandate": <float>, "resource_realloc": <float>, '
+        '"transparency_report": <float>, "staff_hiring": <float>, '
+        '"counseling_programs": <float>}, '
+        '"reasoning": "<one to three sentences>"}'
+    )
+
+
+_MODEL_CACHE: dict[str, tuple[Any, Any, Any]] = {}
+
+
+def _pick_device():
+    """Single-device placement, never device_map='auto'.
+
+    'auto' triggers accelerate to plan a (possibly disk-offloaded) layout,
+    which on macOS/MPS hits a known peft bug in `_update_offload` where
+    `extended_prefix` carries one stray `model.` segment too many. Explicit
+    single-device placement avoids that code path entirely.
+    """
+    import torch
+    if torch.cuda.is_available():
+        return "cuda", torch.float16
+    if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+        return "mps", torch.float16
+    return "cpu", torch.float32
+
+
+def _load_model_and_tokenizer(adapter_path: str):
+    if adapter_path in _MODEL_CACHE:
+        return _MODEL_CACHE[adapter_path]
+
+    import traceback
+    from peft import PeftModel
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+    import torch
+
+    base_id = "unsloth/Llama-3.2-1B-Instruct"
+    device, dtype = _pick_device()
+    print(f"  Loading base model {base_id} on {device} ({dtype})...")
+    tokenizer = AutoTokenizer.from_pretrained(base_id)
+    base = AutoModelForCausalLM.from_pretrained(base_id, torch_dtype=dtype)
+    base = base.to(device)
+
+    print(f"  Loading LoRA adapter from {adapter_path}...")
+    try:
+        model = PeftModel.from_pretrained(base, adapter_path)
+    except Exception:
+        traceback.print_exc()
+        print("  ⚠ Adapter load failed on accelerator; retrying on CPU...")
+        del base
+        base = AutoModelForCausalLM.from_pretrained(
+            base_id, torch_dtype=torch.float32,
+        ).to("cpu")
+        model = PeftModel.from_pretrained(base, adapter_path)
+    model.eval()
+
+    _MODEL_CACHE[adapter_path] = (model, tokenizer, torch)
+    return _MODEL_CACHE[adapter_path]
+
+
+def _generate_action_vector(model, tokenizer, torch, messages: list[dict]) -> np.ndarray:
+    chat = tokenizer.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=True,
+    )
+    inputs = tokenizer(chat, return_tensors="pt").to(model.device)
+    with torch.no_grad():
+        out = model.generate(
+            **inputs,
+            max_new_tokens=256,
+            do_sample=False,
+            temperature=0.0,
+            pad_token_id=tokenizer.eos_token_id,
+        )
+    text = tokenizer.decode(
+        out[0][inputs.input_ids.shape[1]:], skip_special_tokens=True,
+    )
+    try:
+        m = re.search(r"\{.*\}", text, re.DOTALL)
+        data = json.loads(m.group(0)) if m else None
+        av = data["action_vector"] if data and "action_vector" in data else {}
+        return np.array(
+            [float(av.get(n, 0.0)) for n in ACTION_NAMES],
+            dtype=np.float32,
+        )
+    except Exception:
+        return np.full(8, 0.5, dtype=np.float32)
+
 # ============================================================================
 # Plot styling — consistent across all four figures
 # ============================================================================
@@ -89,79 +221,30 @@ def zero_policy():
     return _f
 
 
+_ROLLOUT_SCENARIO_BRIEF = (
+    "Ongoing DropoutCommonsEnv step in a school district under a funding-cut "
+    "scenario: budget pressure, rising teacher burnout, and dropout signals. "
+    "Recommend the next round of intervention intensities."
+)
+
+
 def make_trained_policy(adapter_path: str):
     """Load the LoRA adapter and return a callable obs → action."""
-    print(f"  Loading trained model from {adapter_path}...")
     try:
-        from peft import PeftModel  # noqa: F401
-        from transformers import AutoModelForCausalLM, AutoTokenizer
-        import torch
-
-        base_id = "unsloth/Llama-3.2-1B-Instruct"
-        tokenizer = AutoTokenizer.from_pretrained(base_id)
-        base = AutoModelForCausalLM.from_pretrained(
-            base_id,
-            torch_dtype=torch.float16,
-            device_map="auto",
-        )
-        from peft import PeftModel
-        model = PeftModel.from_pretrained(base, adapter_path)
-        model.eval()
+        model, tokenizer, torch = _load_model_and_tokenizer(adapter_path)
     except Exception as e:
         print(f"  ⚠ Could not load trained model: {e}")
         print("  Falling back to zero policy for the trained slot.")
         return zero_policy()
 
-    sys_prompt = (
-        "You are an educational policy assistant. Given a system state, "
-        "recommend intervention intensities (each in [0,1]) and a brief "
-        "rationale. Output JSON with action_vector (8 named floats) and reasoning."
-    )
-
     def _f(obs):
-        # obs is the 13-d observation; reconstruct a state dict for the prompt
-        state_lines = "\n".join(
-            f"  - {ACTION_NAMES[i] if i < len(ACTION_NAMES) else f'obs_{i}'}: "
-            f"{float(obs[i]):.3f}"
-            for i in range(min(len(obs), 13))
-        )
-        prompt = (
-            f"STATE:\n{state_lines}\n\n"
-            "SCENARIO: ongoing simulation, recommend interventions.\n\n"
-            'Respond with JSON: {"action_vector": {...}, "reasoning": "..."}'
-        )
+        state = _obs_to_state_dict(obs)
+        user_msg = _format_user_prompt(state, _ROLLOUT_SCENARIO_BRIEF)
         messages = [
-            {"role": "system", "content": sys_prompt},
-            {"role": "user",   "content": prompt},
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user",   "content": user_msg},
         ]
-        chat = tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
-        inputs = tokenizer(chat, return_tensors="pt").to(model.device)
-
-        with torch.no_grad():
-            out = model.generate(
-                **inputs,
-                max_new_tokens=256,
-                do_sample=False,
-                temperature=0.0,
-                pad_token_id=tokenizer.eos_token_id,
-            )
-        text = tokenizer.decode(
-            out[0][inputs.input_ids.shape[1]:], skip_special_tokens=True
-        )
-
-        # Extract JSON, then build the 8-vector
-        try:
-            m = re.search(r"\{.*\}", text, re.DOTALL)
-            data = json.loads(m.group(0)) if m else None
-            av = data["action_vector"] if data and "action_vector" in data else {}
-            return np.array(
-                [float(av.get(n, 0.0)) for n in ACTION_NAMES],
-                dtype=np.float32,
-            )
-        except Exception:
-            return np.full(8, 0.5, dtype=np.float32)  # safe-ish fallback
+        return _generate_action_vector(model, tokenizer, torch, messages)
     return _f
 
 
@@ -232,7 +315,7 @@ def evaluate_policy(name: str, policy, n_episodes: int, max_steps: int, seed_bas
 def evaluate_fidelity(adapter_path: str, val_path: Path) -> dict[str, Any]:
     print(f"  Computing student↔teacher fidelity on {val_path}...")
     try:
-        policy = make_trained_policy(adapter_path)
+        model, tokenizer, torch = _load_model_and_tokenizer(adapter_path)
     except Exception as e:
         print(f"  ⚠ Could not load adapter: {e}")
         return {"available": False}
@@ -243,7 +326,6 @@ def evaluate_fidelity(adapter_path: str, val_path: Path) -> dict[str, Any]:
 
     print(f"  Generating predictions on {len(rows)} validation states...")
     for i, row in enumerate(rows):
-        # Extract teacher's recommendation from the assistant message
         try:
             target = json.loads(row["messages"][-1]["content"])
             teacher_av = target["action_vector"]
@@ -253,42 +335,9 @@ def evaluate_fidelity(adapter_path: str, val_path: Path) -> dict[str, Any]:
         except Exception:
             continue
 
-        # Build a fake "obs" from the user message to feed the model
-        # (the model was trained on these exact prompts; we replay them)
-        user_msg = row["messages"][1]["content"]
-        # Quick hack: parse state values from the prompt to build a 13-d obs
-        # For fidelity we don't strictly need the obs to be exact — we want
-        # the model's recommendation given the original prompt.
-        # So we feed the original chat instead.
-        try:
-            from transformers import AutoTokenizer
-            import torch
-            # ensure tokenizer is the one matched to the policy
-            # (trick: build a sub-call)
-        except Exception:
-            pass
-
-        # Simpler path: re-tokenize the original prompt and generate
-        try:
-            from peft import PeftModel
-            from transformers import AutoModelForCausalLM, AutoTokenizer
-            import torch
-            base_id = "unsloth/Llama-3.2-1B-Instruct"
-            global _MODEL, _TOKENIZER
-        except Exception:
-            pass
-
-        # The cleanest approach: just call the policy with a state vector
-        # extracted from the val row. Pull it out of the user prompt.
-        nums = re.findall(r"-?\d+\.\d+", user_msg)[:13]
-        if len(nums) < 13:
-            obs = np.zeros(13, dtype=np.float32)
-            for k, v in enumerate(nums):
-                obs[k] = float(v)
-        else:
-            obs = np.array([float(x) for x in nums[:13]], dtype=np.float32)
-
-        student = policy(obs)
+        # Replay the EXACT prompt used during training — no reconstruction.
+        messages = [m for m in row["messages"] if m["role"] != "assistant"]
+        student = _generate_action_vector(model, tokenizer, torch, messages)
 
         teacher_vectors.append(teacher)
         student_vectors.append(student)

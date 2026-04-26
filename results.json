@@ -1,0 +1,45 @@
+{
+  "env_eval": [
+    {
+      "name": "random",
+      "mean_final": 0.45714966198429463,
+      "std_final": 0.9512396233040852,
+      "n_collapsed": 20,
+      "episodes_solved": 0,
+      "wall_clock_s": 0.010009765625
+    },
+    {
+      "name": "zero",
+      "mean_final": -23.503658972593257,
+      "std_final": 2.8036725111491925,
+      "n_collapsed": 0,
+      "episodes_solved": 20,
+      "wall_clock_s": 0.025828838348388672
+    },
+    {
+      "name": "trained",
+      "mean_final": 0.4490658422000706,
+      "std_final": 0.8574556316655164,
+      "n_collapsed": 20,
+      "episodes_solved": 0,
+      "wall_clock_s": 4238.240874052048
+    }
+  ],
+  "fidelity": {
+    "available": true,
+    "n_examples": 9,
+    "mae_per_intervention": {
+      "funding_boost": 0.17111115157604218,
+      "teacher_incentive": 0.18555554747581482,
+      "student_scholarship": 0.11999998986721039,
+      "attendance_mandate": 0.2666666507720947,
+      "resource_realloc": 0.1899999976158142,
+      "transparency_report": 0.14333336055278778,
+      "staff_hiring": 0.13555556535720825,
+      "counseling_programs": 0.06333333998918533
+    },
+    "overall_mae": 0.15944445133209229,
+    "pearson": 0.23627984113017841,
+    "top3_agreement": 0.1111111111111111
+  }
+}
